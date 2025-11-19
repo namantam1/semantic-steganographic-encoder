@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Steganography Text Encoder (Temperature Control)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fc;
+        }
+
+        .container-card {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 0px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        .loading-ring {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #3b82f6;
+            width: 1.5rem;
+            height: 1.5rem;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body class="p-4 sm:p-8 min-h-screen flex items-start justify-center">
+
+    <div id="app" class="w-full max-w-3xl container-card bg-white rounded-xl p-6 sm:p-8 space-y-8 mt-10">
+        <h1 class="text-3xl font-bold text-gray-800 border-b pb-4 mb-4">
+            Lexical Steganography Encoder (w/ Temperature)
+        </h1>
+
+        <!-- Input Section -->
+        <section class="space-y-4">
+            <label for="secretInput" class="block text-lg font-medium text-gray-700">
+                Secret Message
+            </label>
+            <input type="text" id="secretInput" value="I am good"
+                class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-gray-800"
+                placeholder="Enter text to encode (e.g., hello)">
+
+            <!-- Temperature Slider -->
+            <div class="pt-2 border-b pb-4">
+                <label for="temperatureSlider" class="block text-sm font-medium text-gray-700 flex justify-between">
+                    <span>Temperature (<span id="tempValue">0.8</span>):</span>
+                    <span id="tempDescription" class="text-blue-600 font-normal">Balanced Variety</span>
+                </label>
+                <input type="range" id="temperatureSlider" min="0.1" max="1.5" step="0.1" value="0.8"
+                    class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                    oninput="updateTempDisplay(this.value)">
+                <div class="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>0.1 (Coherent)</span>
+                    <span>1.5 (Random)</span>
+                </div>
+
+                <!-- NEW CHECKBOX -->
+                <div class="mt-4 flex items-center">
+                    <input id="deterministicToggle" type="checkbox" onchange="toggleDeterministicMode(this.checked)"
+                        class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                    <label for="deterministicToggle" class="ml-2 block text-sm font-medium text-gray-700">
+                        **Deterministic Mode** (Always pick best path, ignore random chance)
+                    </label>
+                </div>
+            </div>
+
+            <button id="encodeButton"
+                class="w-full sm:w-auto px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-150 flex items-center justify-center"
+                onclick="handleEncode()">
+                <span id="buttonText">Encode Message</span>
+                <div id="loadingIndicator" class="loading-ring hidden ml-3"></div>
+            </button>
+            <div id="statusMessage" class="text-sm text-red-600 mt-2 hidden"></div>
+        </section>
+
+        <!-- Output Section -->
+        <section class="space-y-4 pt-4 border-t">
+            <h2 class="text-xl font-semibold text-gray-800">1. Encoded Cover Text (Try encoding multiple times!)</h2>
+            <div id="coverTextOutput"
+                class="min-h-12 p-4 bg-gray-50 border border-gray-200 rounded-lg text-gray-800 whitespace-pre-wrap select-all">
+                The resulting sentence will appear here.
+            </div>
+
+            <h2 class="text-xl font-semibold text-gray-800 pt-4">2. Decoded Verification</h2>
+            <div id="decodedVerification"
+                class="min-h-12 p-4 bg-gray-50 border border-gray-200 rounded-lg text-green-700 font-mono">
+                Decoded message verification (first letter of each word).
+            </div>
+        </section>
+    </div>
+
+    <script>
+        const BEAM_WIDTH = 5;
+        // We set the base score difference between N-gram and Fallback extremely high
+        const FALLBACK_PENALTY_SCORE = -50.0;
+        const DETERMINISTIC_TEMP = 0.001; // Near zero temp used to signal deterministic mode
+
+        let model = null;
+        let wordsByChar = {};
+        let currentTemperature = 0.8; // Controlled by slider or deterministic toggle
+
+        const secretInput = document.getElementById('secretInput');
+        const encodeButton = document.getElementById('encodeButton');
+        const buttonText = document.getElementById('buttonText');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const statusMessage = document.getElementById('statusMessage');
+        const coverTextOutput = document.getElementById('coverTextOutput');
+        const decodedVerification = document.getElementById('decodedVerification');
+        const tempValue = document.getElementById('tempValue');
+        const tempDescription = document.getElementById('tempDescription');
+        const temperatureSlider = document.getElementById('temperatureSlider');
+        const deterministicToggle = document.getElementById('deterministicToggle');
+
+
+        /**
+         * Converts simplified transition IDs into a list of real [ID, Score] tuples.
+         * The score is simulated log probability, assuming the order in the JSON is by frequency.
+         * @param {number} currentWordId - ID of the last word in the path.
+         * @param {string} targetChar - The required starting letter of the next word.
+         * @returns {Array<[number, number]>} List of [next_word_id, log_probability_score].
+         */
+        function getCandidates(currentWordId, targetChar) {
+            const currentIdStr = String(currentWordId);
+            const candidates = [];
+
+            // Strategy A: Look at the N-Gram Graph (Coherent transition)
+            const transitions = model.map[currentIdStr];
+            if (transitions && transitions[targetChar]) {
+                const ids = transitions[targetChar];
+                ids.forEach((id, index) => {
+                    // Simulate Log Prob: The first (most likely) has the highest score (least negative)
+                    const score = -1.0 - (index * 0.2); // e.g., -1.0, -1.2, -1.4
+                    candidates.push({ id: id, score: score });
+                });
+            }
+
+            // Strategy B: Fallback 
+            // This is ONLY used if Strategy A found nothing.
+            if (candidates.length === 0) {
+                const fallbackWords = wordsByChar[targetChar] || [];
+                // Only take a small subset for efficiency and variety
+                fallbackWords.slice(0, 5).forEach(wordId => {
+                    // Apply heavy penalty: 
+                    candidates.push({ id: wordId, score: FALLBACK_PENALTY_SCORE });
+                });
+            }
+
+            return candidates;
+        }
+
+        /**
+         * Applies Softmax scaling and samples from the resulting distribution.
+         * IMPORTANT FIX: If T is DETERMINISTIC_TEMP, it bypasses random sampling
+         * and chooses the candidate with the highest raw score.
+         * * @param {Array<Object>} candidates - List of {id, score} objects.
+         * @param {number} T - The temperature parameter.
+         * @returns {number} The ID of the randomly sampled word.
+         */
+        function sampleWithTemperature(candidates, T) {
+            if (candidates.length === 0) return null;
+
+            // --- DETERMINISTIC FIX ---
+            if (T === DETERMINISTIC_TEMP) {
+                let bestId = null;
+                let maxScore = -Infinity;
+
+                // Find the candidate with the highest raw score (least negative)
+                for (const c of candidates) {
+                    if (c.score > maxScore) {
+                        maxScore = c.score;
+                        bestId = c.id;
+                    }
+                }
+                return bestId;
+            }
+            // --- END DETERMINISTIC FIX ---
+
+            // 1. Apply Temperature: score / T
+            const tempAdjustedScores = candidates.map(c => c.score / T);
+
+            // 2. Apply Softmax: P = exp(s) / SUM(exp(s_i))
+            // To prevent overflow/underflow, we shift scores by subtracting the maximum score (LogSumExp Trick)
+            const maxScore = Math.max(...tempAdjustedScores);
+            const exponentiatedScores = tempAdjustedScores.map(s => Math.exp(s - maxScore));
+
+            const sumExpScores = exponentiatedScores.reduce((a, b) => a + b, 0);
+
+            const probabilities = exponentiatedScores.map(e => e / sumExpScores);
+
+            // 3. Perform Weighted Random Sampling
+            const randomThreshold = Math.random();
+            let cumulativeProbability = 0;
+
+            for (let i = 0; i < candidates.length; i++) {
+                cumulativeProbability += probabilities[i];
+                if (randomThreshold <= cumulativeProbability) {
+                    return candidates[i].id;
+                }
+            }
+            // Fallback to the first candidate (which has the highest score)
+            return candidates[0].id;
+        }
+
+        /**
+         * Implements the Beam Search to find the best-scoring sentence.
+         * @param {string[]} targetChars - Sequence of required starting characters.
+         * @returns {string} The encoded sentence.
+         */
+        function encodeText(targetChars) {
+            if (!targetChars || targetChars.length === 0) return "";
+
+            // Use the globally controlled temperature
+            const T = currentTemperature;
+            const isDeterministic = (T === DETERMINISTIC_TEMP);
+
+            // When deterministic, we only sample once (to pick the single best candidate).
+            // When non-deterministic, we sample BEAM_WIDTH times for variety.
+            const beamSampleCount = isDeterministic ? 1 : BEAM_WIDTH;
+
+            // Step 1: Initialize Beam with the first character
+            const firstChar = targetChars[0];
+            let beam = [];
+
+            // Initial candidates (uses fallback logic implicitly, but we sample from it)
+            const initialCandidates = getCandidates(-1, firstChar); // Use -1 as dummy ID for the first word
+
+            // Sample the starting words based on the initial distribution
+            for (let i = 0; i < beamSampleCount; i++) {
+                const sampledId = sampleWithTemperature(initialCandidates, T);
+                // Find the score for the sampled ID to keep track of path quality
+                const score = initialCandidates.find(c => c.id === sampledId)?.score || 0.0;
+
+                beam.push({
+                    sequence: [sampledId],
+                    score: score
+                });
+
+                // Optimization: If deterministic, we only need the single best path, so break after one iteration.
+                if (isDeterministic && i === 0) break;
+            }
+
+            // Step 2: Iterate through the rest of the characters
+            for (let char_idx = 1; char_idx < targetChars.length; char_idx++) {
+                const targetChar = targetChars[char_idx];
+                let newBeam = [];
+
+                for (const path of beam) {
+                    const lastWordId = path.sequence[path.sequence.length - 1];
+                    const currentScore = path.score;
+
+                    // Get ALL possible next words for this transition
+                    const candidates = getCandidates(lastWordId, targetChar);
+
+                    if (candidates.length === 0) continue;
+
+                    // Sample based on the determined count
+                    for (let i = 0; i < beamSampleCount; i++) {
+                        const sampledId = sampleWithTemperature(candidates, T);
+                        // Find the *actual* score of the sampled word to maintain cumulative path score
+                        const transScore = candidates.find(c => c.id === sampledId)?.score || FALLBACK_PENALTY_SCORE;
+
+                        newBeam.push({
+                            sequence: [...path.sequence, sampledId],
+                            score: currentScore + transScore
+                        });
+
+                        // Optimization: If deterministic, we only need the single best continuation for this path.
+                        if (isDeterministic && i === 0) break;
+                    }
+                }
+
+                // Pruning (Still necessary to keep search space small and find the *overall* best path)
+                if (newBeam.length === 0) break;
+
+                // Sort by score (descending) and keep top K paths
+                newBeam.sort((a, b) => b.score - a.score);
+                beam = newBeam.slice(0, BEAM_WIDTH);
+
+                // Optimization: If deterministic, we only need to keep the single best path.
+                if (isDeterministic) {
+                    beam = newBeam.slice(0, 1);
+                }
+            }
+
+            // Step 3: Return best sentence
+            if (beam.length === 0) return "Encoding failed: No valid path found.";
+
+            const bestPath = beam[0];
+            const decodedWords = bestPath.sequence.map(id => model.vocab[id]);
+
+            const sentence = decodedWords.join(" ");
+            return sentence.charAt(0).toUpperCase() + sentence.slice(1) + ".";
+        }
+
+        // --- Utility Functions ---
+
+        function updateTempDisplay(value) {
+            currentTemperature = parseFloat(value);
+            tempValue.textContent = value;
+            if (currentTemperature <= 0.3) {
+                tempDescription.textContent = "High Coherence, Low Variety (Deterministic)";
+                tempDescription.className = 'text-red-600 font-normal';
+            } else if (currentTemperature >= 1.2) {
+                tempDescription.textContent = "High Variety, Low Coherence (Random)";
+                tempDescription.className = 'text-orange-600 font-normal';
+            } else {
+                tempDescription.textContent = "Balanced Variety";
+                tempDescription.className = 'text-blue-600 font-normal';
+            }
+        }
+
+        function toggleDeterministicMode(isChecked) {
+            if (isChecked) {
+                currentTemperature = DETERMINISTIC_TEMP;
+                temperatureSlider.disabled = true;
+                tempValue.textContent = DETERMINISTIC_TEMP;
+                tempDescription.textContent = "Deterministic Output (T=0.001)";
+                tempDescription.className = 'text-red-600 font-normal';
+            } else {
+                temperatureSlider.disabled = false;
+                // Restore temperature to the slider value
+                updateTempDisplay(temperatureSlider.value);
+            }
+        }
+
+
+        function decodeText(sentence) {
+            const words = sentence.toLowerCase().match(/[a-z]+/g) || [];
+            return words.map(w => w[0]).join('');
+        }
+
+        // --- Main Handler and Init ---
+
+        async function handleEncode() {
+            if (!model) {
+                statusMessage.textContent = "Model not ready. Please refresh.";
+                return;
+            }
+
+            const secret = secretInput.value.trim();
+            if (secret.length === 0) {
+                statusMessage.textContent = "Please enter a secret message.";
+                statusMessage.classList.remove('hidden');
+                return;
+            }
+
+            statusMessage.classList.add('hidden');
+            encodeButton.disabled = true;
+            buttonText.textContent = "Encoding...";
+            loadingIndicator.classList.remove('hidden');
+
+            const targetChars = getTargetChars(secret);
+
+            setTimeout(() => {
+                // Ensure current temperature reflects deterministic toggle state before encoding
+                if (deterministicToggle.checked) {
+                    currentTemperature = DETERMINISTIC_TEMP;
+                } else {
+                    currentTemperature = parseFloat(temperatureSlider.value);
+                }
+
+                const coverText = encodeText(targetChars);
+                const decodedText = decodeText(coverText);
+
+                coverTextOutput.textContent = coverText;
+                decodedVerification.textContent = `Original: ${targetChars.join('')} | Decoded: ${decodedText}`;
+
+                if (targetChars.join('') === decodedText) {
+                    decodedVerification.classList.remove('text-red-700');
+                    decodedVerification.classList.add('text-green-700');
+                } else {
+                    decodedVerification.classList.remove('text-green-700');
+                    decodedVerification.classList.add('text-red-700');
+                    console.error("Decoding error! Check if the corpus has enough transition data.");
+                }
+
+                encodeButton.disabled = false;
+                buttonText.textContent = "Encode Message";
+                loadingIndicator.classList.add('hidden');
+            }, 10);
+        }
+
+        async function loadModel() {
+            try {
+                const response = await fetch('model_data.json');
+                const data = await response.json();
+
+                model = { vocab: data.vocab, map: data.map };
+
+                model.vocab.forEach((word, id) => {
+                    const char = word[0];
+                    if (!wordsByChar[char]) {
+                        wordsByChar[char] = [];
+                    }
+                    wordsByChar[char].push(id);
+                });
+
+                console.log(`Model loaded successfully. Vocab size: ${model.vocab.length}`);
+                return true;
+
+            } catch (error) {
+                console.error("Error loading model:", error);
+                statusMessage.textContent = "Error: Could not load model_data.json. Check console.";
+                statusMessage.classList.remove('hidden');
+                encodeButton.disabled = true;
+                return false;
+            }
+        }
+
+        function getTargetChars(text) {
+            return text.toLowerCase().replace(/[^a-z]/g, '').split('');
+        }
+
+        window.onload = async () => {
+            const success = await loadModel();
+            if (success) {
+                encodeButton.disabled = false;
+                // Run a test encoding on load for initial display
+                handleEncode();
+            }
+        };
+
+    </script>
+</body>
+
+</html>
