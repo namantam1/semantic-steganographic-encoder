@@ -13,7 +13,7 @@ The model is pre-calculated offline (e.g., using Python) and served to the brows
 | `WORDS_BY_CHAR` | A lookup for all Word IDs grouped by their starting character (used for the first word and the Fallback mechanism).                                                |
 
 
-```json
+```json5
 MODEL_DATA = {
     "VOCAB": [ "the", "in", "afternoon", "my", ... ], // Index = ID
     "TRANSITIONS": {
@@ -176,7 +176,8 @@ FUNCTION SELECT_NEXT_WORD_ID(current_word_id, target_char, T, beam_width):
 
 # Ideas to improve
 
-- Add option in ui to tweak various params - beam width, temperature, fallback penalty
-- Add option to use custom text corpus.
-- Add option to visualize the bigram
-- Try tri-gram and multi-gram as well
+- [ ] Add option in ui to tweak various params - beam width, temperature, fallback penalty.
+- [ ] Add option to use custom text corpus.
+- [ ] Add option to visualize the bigram.
+- [ ] Try tri-gram and multi-gram as well.
+- [ ] Better decoding by creating a reverse dictionary. 
