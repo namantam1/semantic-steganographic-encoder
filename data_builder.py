@@ -2,11 +2,14 @@ import json
 import re
 import collections
 from operator import itemgetter
+import requests
+import os
+from pathlib import Path
 
 # --- CONFIGURATION ---
 # How many suggestions to keep per letter. 
 # Lower = Smaller file size, Higher = Better sentence variety.
-TOP_K_PER_LETTER = 5 
+TOP_K_PER_LETTER = 30
 
 # Minimum frequency to consider a word pair valid.
 # Helps remove "junk" connections that only appeared once.
@@ -22,6 +25,21 @@ I love coding in python. Python is great for data science.
 The weather is nice today. I hope it stays sunny.
 In addition to this, we have other options.
 """
+
+def load_data():
+    cache_dir = Path(".cache")
+    file_name = "data.txt"
+    file_path = cache_dir / file_name
+    if file_path.exists():
+        return file_path.read_text()
+        
+    url = "https://raw.githubusercontent.com/liux2/RNN-on-wikitext2/refs/heads/main/data/wiki.train.txt"
+    print(f"Downloading {url}...")
+    response = requests.get(url)
+    text = response.text
+    os.makedirs(cache_dir, exist_ok=True)
+    file_path.write_text(text)
+    return text
 
 def preprocess(text):
     """
@@ -45,7 +63,7 @@ def build_model(tokens):
     
     # Create ID mapping: 0 is reserved, words start at 1
     # Sort by frequency (most common words get smaller IDs, saves JSON bytes)
-    sorted_vocab = [w for w, c in word_counts.most_common()]
+    sorted_vocab = [w for w, _ in word_counts.most_common()]
     word_to_id = {w: i for i, w in enumerate(sorted_vocab)}
     id_to_word = {i: w for i, w in enumerate(sorted_vocab)}
     
@@ -121,8 +139,11 @@ def save_to_file(vocab, transitions, filename="model_data.json"):
 
 # --- MAIN EXECUTION ---
 if __name__ == "__main__":
+    # 0. load data 
+    data = load_data()
+
     # 1. Preprocess
-    clean_tokens = preprocess(text_corpus)
+    clean_tokens = preprocess(data)
     
     # 2. Build
     vocab_map, transition_graph = build_model(clean_tokens)
