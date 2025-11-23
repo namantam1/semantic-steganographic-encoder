@@ -1,6 +1,35 @@
-## Steganographic Encoder Algorithm
+# Semantic Steganographic Encoder
 
-The goal is to generate a semantically coherent "Cover Sentence" where the first letter of each word corresponds to a character in the hidden "Secret Message." The architecture is designed for a minimal footprint client-side execution.
+A **Vite-powered** steganographic encoder that hides secret messages in grammatically coherent sentences using a bigram N-gram model with beam search. The first letter of each word in the generated sentence encodes a character from the secret message.
+
+## Quick Start
+
+### Installation
+
+```bash
+npm install
+```
+
+### Development
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:3000` in your browser.
+
+### Production Build
+
+```bash
+npm run build
+npm run preview
+```
+
+---
+
+## Algorithm Overview
+
+The goal is to generate a semantically coherent "Cover Sentence" where the first letter of each word corresponds to a character in the hidden "Secret Message." The architecture uses Vite for modern bundling and ES modules for client-side execution.
 
 ### 1. Data Structure (The Compressed Model)
 
@@ -174,10 +203,60 @@ FUNCTION SELECT_NEXT_WORD_ID(current_word_id, target_char, T, beam_width):
 2.  **Variety:** By introducing the sampling step, running the encoder twice with the same input will almost certainly produce two different, yet coherent, output sentences. This dramatically improves the cryptographic quality of the encoding.
 
 
-# Ideas to improve
+---
 
-- [ ] Add option in ui to tweak various params - beam width, temperature, fallback penalty.
-- [ ] Add option to use custom text corpus.
-- [ ] Add option to visualize the bigram.
-- [ ] Try tri-gram and multi-gram as well.
-- [ ] Better decoding by creating a reverse dictionary. 
+## Project Structure
+
+```
+.
+├── index.html              # Main UI (Vite entry point)
+├── package.json            # NPM dependencies and scripts
+├── vite.config.js          # Vite configuration
+├── src/
+│   ├── main.js             # Core JavaScript logic (ES modules)
+│   └── style.css           # Custom styling
+├── public/
+│   └── model_data.json     # Pre-built bigram model (1.4 MB)
+├── data_builder.py         # Builds bigram model from corpus
+├── steganography.py        # Python reference implementation
+└── backup/                 # Older versions and experiments
+```
+
+## Building the Model
+
+Generate `model_data.json` from a text corpus:
+
+```bash
+python data_builder.py
+```
+
+This downloads the WikiText-2 corpus and outputs `model_data.json`. Move the generated file to the `public/` directory.
+
+**Configuration** in `data_builder.py`:
+- `TOP_K_PER_LETTER`: Bigram suggestions per letter (default: 30)
+- `MIN_BIGRAM_FREQ`: Minimum frequency threshold (default: 2)
+
+## Technology Stack
+
+- **Vite**: Fast build tool with HMR
+- **Vanilla JavaScript**: ES6 modules
+- **Tailwind CSS**: Utility-first CSS (via CDN)
+- **Python**: For offline model generation
+
+## Features
+
+- ✅ Beam search with configurable width
+- ✅ Fallback mechanism for missing bigrams
+- ✅ Dynamic programming word splitter for decoded output
+- ✅ ES6 modules with tree-shaking
+- ✅ Hot Module Replacement (HMR)
+- ✅ Optimized production builds
+
+## Ideas to Improve
+
+- [ ] Add UI controls for beam width, temperature, and fallback penalty
+- [ ] Add option to use custom text corpus
+- [ ] Add option to visualize the bigram
+- [ ] Try tri-gram and multi-gram support
+- [ ] Better decoding with reverse dictionary
+- [ ] Migrate Tailwind CSS from CDN to PostCSS setup 

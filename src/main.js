@@ -1,3 +1,5 @@
+import './style.css';
+
 const BEAM_WIDTH = 20;
 const FALLBACK_PENALTY = -20.0; // Heavy penalty for using a non-bigram word
 
@@ -18,7 +20,7 @@ const decodedSplit = document.getElementById('decodedSplit');
  */
 async function loadModel() {
     try {
-        const response = await fetch('model_data.json');
+        const response = await fetch('/model_data.json');
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -246,7 +248,7 @@ function decodeAndSplit(sentence) {
 /**
  * Main handler for the encode button click.
  */
-async function handleEncode() {
+export async function handleEncode() {
     if (!model) {
         // Should only happen if initial load fails
         statusMessage.textContent = "Model not ready. Please refresh.";
@@ -293,11 +295,14 @@ async function handleEncode() {
 }
 
 // --- Initialization ---
-window.onload = async () => {
+(async () => {
     const success = await loadModel();
     if (success) {
         encodeButton.disabled = false;
         // Run a test encoding on load for initial display
         handleEncode();
     }
-};
+})();
+
+// Make handleEncode available globally for inline onclick handler
+window.handleEncode = handleEncode;

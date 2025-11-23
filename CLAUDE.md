@@ -12,10 +12,11 @@ The project consists of several components:
 
 1. **Python Data Builder** (`data_builder.py`): Offline preprocessing script that builds the bigram model from a text corpus
 2. **Python Steganography Engine** (`steganography.py`): Reference implementation with training and encoding/decoding logic
-3. **JavaScript Web Client**:
+3. **Vite-based Web Client**:
    - `index.html`: Main UI structure
-   - `app.js`: Core encoding/decoding logic with beam search and DP word splitting
-   - `styles.css`: Custom styling and animations
+   - `src/main.js`: Core encoding/decoding logic with beam search and DP word splitting (ES modules)
+   - `src/style.css`: Custom styling and animations
+   - `public/model_data.json`: Pre-built bigram model served as static asset
 4. **Backup Directory** (`backup/`): Contains older versions and experimental implementations
    - `data_builder.py`: Previous version of the data builder
    - `steganography.py`: Previous version of the steganography engine
@@ -37,7 +38,7 @@ Generate the compressed bigram model (`model_data.json`) from a text corpus:
 python data_builder.py
 ```
 
-This downloads WikiText-2 corpus (cached in `.cache/`), builds vocabulary and transition graph, and outputs `model_data.json` (approx 1.4 MB).
+This downloads WikiText-2 corpus (cached in `.cache/`), builds vocabulary and transition graph, and outputs `model_data.json` (approx 1.4 MB). The generated file should be placed in the `public/` directory.
 
 **Configuration parameters in `data_builder.py`**:
 - `TOP_K_PER_LETTER`: Number of bigram suggestions per starting letter (default: 30)
@@ -53,16 +54,31 @@ python steganography.py
 
 This trains a model on the embedded test corpus and encodes/decodes the test message "I am good".
 
-### Running the Web UI
+### Running the Web UI (Vite Development Server)
 
-Serve the HTML files via a local web server:
-
+**Install dependencies first:**
 ```bash
-python -m http.server 8000
+npm install
 ```
 
-Then open:
-- `http://localhost:8000/index.html` - Basic encoder/decoder
+**Start development server:**
+```bash
+npm run dev
+```
+
+This starts Vite's dev server with Hot Module Replacement (HMR) at `http://localhost:3000`
+
+**Build for production:**
+```bash
+npm run build
+```
+
+Outputs optimized bundle to `dist/` directory
+
+**Preview production build:**
+```bash
+npm run preview
+```
 
 ## Data Structure
 
@@ -82,7 +98,7 @@ Then open:
 
 ### JavaScript Client Parameters
 
-In `app.js`:
+In `src/main.js`:
 - `BEAM_WIDTH`: Number of paths to maintain in beam search (default: 20)
 - `FALLBACK_PENALTY`: Score penalty for non-bigram words (default: -20.0)
 
@@ -94,12 +110,13 @@ In `app.js`:
 - **Bigram Building**: Counts word pair frequencies, groups by next word's starting character
 - **Log Probabilities**: Python implementation uses `log(count/total)` for transition scores
 
-### JavaScript Side
+### JavaScript Side (Vite + ES Modules)
 
-- **Model Loading**: Fetches `model_data.json` and builds `wordsByChar` lookup on initialization (`app.js:loadModel()`)
-- **Candidate Selection**: Uses bigram transitions first, falls back to vocabulary lookup (`app.js:getCandidates()`)
+- **Module System**: Uses ES6 imports (`import './style.css'`) with Vite bundler
+- **Model Loading**: Fetches `/model_data.json` from public directory and builds `wordsByChar` lookup on initialization (`src/main.js:loadModel()`)
+- **Candidate Selection**: Uses bigram transitions first, falls back to vocabulary lookup (`src/main.js:getCandidates()`)
 - **Simplified Scoring**: JavaScript uses `baseScore - (index * 0.1)` instead of true log probabilities (assumes sorted order implies probability)
-- **Word Splitting**: Dynamic programming algorithm (`app.js:splitIntoWords()`) that:
+- **Word Splitting**: Dynamic programming algorithm (`src/main.js:splitIntoWords()`) that:
   - Builds a Set from vocabulary for O(1) lookups
   - Uses DP table to track minimum unrecognized characters
   - Reconstructs optimal word boundaries via parent pointers
@@ -116,15 +133,20 @@ In `app.js`:
 
 ```
 .
-├── index.html              # Main UI structure
-├── app.js                  # Core JavaScript logic (encoding, decoding, word splitting)
-├── styles.css              # Custom styling and animations
+├── index.html              # Main UI structure (Vite entry point)
+├── package.json            # NPM dependencies and scripts
+├── vite.config.js          # Vite configuration
+├── src/
+│   ├── main.js             # Core JavaScript logic (ES modules)
+│   └── style.css           # Custom styling and animations
+├── public/
+│   └── model_data.json     # Pre-built bigram model (1.4 MB, static asset)
 ├── data_builder.py         # Builds bigram model from corpus
 ├── steganography.py        # Python reference implementation
-├── model_data.json         # Pre-built bigram model (1.4 MB)
 ├── CLAUDE.md               # This file
 ├── README.md               # Project documentation
 ├── .cache/                 # Cached corpus data
+├── .gitignore              # Git ignore rules (includes node_modules, dist)
 └── backup/                 # Older versions and experiments
     ├── data_builder.py
     ├── steganography.py
@@ -133,8 +155,10 @@ In `app.js`:
 
 ## Recent Improvements
 
+- **Vite Migration**: Migrated to Vite for modern build tooling with HMR and optimized production builds
+- **ES Modules**: Converted to ES6 module system for better code organization and tree-shaking
 - **Word Splitting Feature**: Decoded messages are now automatically split into readable words using DP algorithm
-- **Code Organization**: Separated HTML, CSS, and JavaScript into dedicated files for better maintainability
+- **Code Organization**: Separated HTML, CSS, and JavaScript into dedicated files with proper module structure
 - **UI Enhancement**: Added "Decoded Message (Word Split)" section to display human-readable decoded output
 
 ## Future Improvements
