@@ -38,7 +38,8 @@ def load_data():
     Downloads data file if not cached and returns the file path.
     Uses streaming download for memory efficiency with large files.
     """
-    cache_dir = Path(".cache")
+    # Use parent directory since script is in scripts/ folder
+    cache_dir = Path("../.cache")
     file_name = "data.txt"
     file_path = cache_dir / file_name
 
@@ -227,7 +228,7 @@ def build_model_incremental(file_path, english_words):
 
     return id_to_word, final_transitions
 
-def save_to_file(vocab, transitions, filename="public/model_data.json"):
+def save_to_file(vocab, transitions, filename="../public/model_data.json"):
     """
     Saves the compressed model.
     """

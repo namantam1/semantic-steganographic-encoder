@@ -154,17 +154,33 @@ RETURN decoded_chars.JOIN_AS_STRING()
 
 ```
 .
-├── index.html              # Main UI (Vite entry point)
+├── index.html              # Main encoder UI (Vite entry point)
+├── visualizer.html         # Bigram visualizer UI
 ├── package.json            # NPM dependencies and scripts
-├── vite.config.js          # Vite configuration
+├── vite.config.ts          # Vite configuration (TypeScript)
+├── tsconfig.json           # TypeScript configuration
 ├── src/
-│   ├── main.js             # Core JavaScript logic (ES modules)
-│   └── style.css           # Custom styling
+│   ├── main.tsx            # Application entry point (React)
+│   ├── App.tsx             # Main encoder UI component
+│   ├── encoder.ts          # Core encoding/decoding logic
+│   ├── encoder.test.ts     # Encoder test suite
+│   ├── visualizer-main.tsx # Visualizer entry point
+│   ├── Visualizer.tsx      # Bigram graph visualization component
+│   ├── visualizer-logic.ts # Visualization algorithms
+│   ├── visualizer-logic.test.ts # Visualizer test suite
+│   ├── style.css           # Main application styles
+│   └── visualizer.css      # Visualizer styles
 ├── public/
-│   └── model_data.json     # Pre-built bigram model (1.4 MB)
-├── data_builder.py         # Builds bigram model from corpus
-├── steganography.py        # Python reference implementation
-└── backup/                 # Older versions and experiments
+│   └── model_data.json     # Pre-built bigram model (~1.4 MB)
+├── scripts/                # Python build scripts
+│   ├── __init__.py
+│   ├── data_builder.py     # Builds bigram model from corpus
+│   ├── pyproject.toml      # Python dependencies (uv)
+│   ├── uv.lock             # Python lock file
+│   └── README.md           # Python scripts documentation
+└── backup/                 # Legacy implementations
+    ├── steganography.py    # Python reference implementation
+    └── with_temprature.html # Experimental HTML version
 ```
 
 ## Building the Model
@@ -172,21 +188,26 @@ RETURN decoded_chars.JOIN_AS_STRING()
 Generate `model_data.json` from a text corpus:
 
 ```bash
+cd scripts
 python data_builder.py
 ```
 
-This downloads the WikiText-2 corpus and outputs `model_data.json`. Move the generated file to the `public/` directory.
+This downloads the WikiText-2 corpus and outputs `model_data.json` directly to the `public/` directory.
 
-**Configuration** in `data_builder.py`:
+**Configuration** in `scripts/data_builder.py`:
 - `TOP_K_PER_LETTER`: Bigram suggestions per letter (default: 30)
 - `MIN_BIGRAM_FREQ`: Minimum frequency threshold (default: 2)
 
+See `scripts/README.md` for more details.
+
 ## Technology Stack
 
+- **React 18**: Modern UI framework with hooks
+- **TypeScript**: Type-safe development
 - **Vite**: Fast build tool with HMR
-- **Vanilla JavaScript**: ES6 modules
+- **Vitest**: Unit testing framework
 - **Tailwind CSS**: Utility-first CSS (via CDN)
-- **Python**: For offline model generation
+- **Python**: For offline model generation (optional)
 
 ## Features
 
