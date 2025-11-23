@@ -1,5 +1,8 @@
 import { getTargetChars, getCandidates, Model, WordsByChar } from './encoder';
 
+// Re-export types for component use
+export type { Model, WordsByChar };
+
 const BEAM_WIDTH = 20;
 const SENTENCE_BREAK_ID = -1;
 

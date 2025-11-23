@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import './style.css';
 import {
   getTargetChars,
@@ -217,9 +218,17 @@ export default function App() {
   return (
     <div className="p-4 sm:p-8 min-h-screen flex items-start justify-center">
       <div className="w-full max-w-3xl container-card bg-white rounded-xl p-6 sm:p-8 space-y-8 mt-10">
-        <h1 className="text-3xl font-bold text-gray-800 border-b pb-4 mb-4">
-          Lexical Steganography Encoder
-        </h1>
+        <div className="flex items-center justify-between border-b pb-4 mb-4">
+          <h1 className="text-3xl font-bold text-gray-800">
+            Lexical Steganography Encoder
+          </h1>
+          <Link
+            to="/visualizer"
+            className="px-4 py-2 bg-purple-600 text-white font-medium rounded-lg hover:bg-purple-700 transition duration-150"
+          >
+            Visualizer
+          </Link>
+        </div>
 
         <EncoderForm
           secretText={secretText}

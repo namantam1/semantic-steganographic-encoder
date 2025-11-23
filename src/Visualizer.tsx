@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import './style.css';
 import './visualizer.css';
 import { Model, WordsByChar } from './encoder';
@@ -8,414 +9,17 @@ import {
   performBeamStep,
   getStepCandidates,
   handleWordSelection as handleWordSelectionLogic,
-  sequenceToSentence,
   validateMessage,
   BeamPath,
   UserPath,
   SENTENCE_BREAK_ID,
 } from './visualizer-logic';
-
-const DISPLAY_BEAMS = 3;
-
-// ModeToggle Component
-interface ModeToggleProps {
-  currentMode: string;
-  onModeChange: (mode: string) => void;
-}
-
-function ModeToggle({ currentMode, onModeChange }: ModeToggleProps) {
-  return (
-    <div className="mode-toggle">
-      <button
-        className={currentMode === 'algorithm' ? 'active text-sm' : 'text-sm'}
-        onClick={() => onModeChange('algorithm')}
-      >
-        Algorithm
-      </button>
-      <button
-        className={currentMode === 'manual' ? 'active text-sm' : 'text-sm'}
-        onClick={() => onModeChange('manual')}
-      >
-        Manual
-      </button>
-    </div>
-  );
-}
-
-// InputSection Component
-interface InputSectionProps {
-  secretText: string;
-  onSecretChange: (text: string) => void;
-  onStart: () => void;
-  onReset: () => void;
-  currentMode: string;
-  onModeChange: (mode: string) => void;
-}
-
-function InputSection({
-  secretText,
-  onSecretChange,
-  onStart,
-  onReset,
-  currentMode,
-  onModeChange,
-}: InputSectionProps) {
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      onStart();
-    }
-  };
-
-  return (
-    <div className="container-card bg-white rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold text-gray-800">Secret Message</h2>
-        <ModeToggle currentMode={currentMode} onModeChange={onModeChange} />
-      </div>
-
-      <input
-        type="text"
-        value={secretText}
-        onChange={(e) => onSecretChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        maxLength={20}
-        className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-gray-800 mb-3"
-        placeholder="Enter text to encode (max 20 characters)"
-      />
-
-      <div className="flex gap-2">
-        <button onClick={onStart} className="control-btn primary text-sm flex-1">
-          Start
-        </button>
-        <button onClick={onReset} className="control-btn secondary text-sm flex-1">
-          Reset
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// CharacterProgress Component
-interface CharacterProgressProps {
-  targetChars: string[];
-  currentStep: number;
-  show: boolean;
-}
-
-function CharacterProgress({ targetChars, currentStep, show }: CharacterProgressProps) {
-  if (!show) return null;
-
-  return (
-    <div className="container-card bg-white rounded-xl p-4">
-      <h2 className="text-lg font-semibold text-gray-800 mb-3">Progress</h2>
-      <div className="flex flex-wrap items-center">
-        {targetChars.map((char, idx) => {
-          let className = 'char-box';
-          if (idx < currentStep) className += ' completed';
-          else if (idx === currentStep) className += ' current';
-          else className += ' pending';
-
-          return (
-            <div key={idx} className={className}>
-              {char}
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-3 text-xs text-gray-600">
-        <div>
-          Encoding character {currentStep + 1} of {targetChars.length}:{' '}
-          "{targetChars[currentStep] || 'Complete'}"
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// StepControls Component
-interface StepControlsProps {
-  show: boolean;
-  currentStep: number;
-  targetLength: number;
-  currentMode: string;
-  userHistoryLength: number;
-  isPlaying: boolean;
-  onPrev: () => void;
-  onNext: () => void;
-  onPlay: () => void;
-  onPause: () => void;
-}
-
-function StepControls({
-  show,
-  currentStep,
-  targetLength,
-  currentMode,
-  userHistoryLength,
-  isPlaying,
-  onPrev,
-  onNext,
-  onPlay,
-  onPause,
-}: StepControlsProps) {
-  if (!show) return null;
-
-  const prevDisabled = currentStep === 0;
-  const userHasSelectedForCurrentStep = userHistoryLength > currentStep + 1;
-  const nextDisabled =
-    currentMode === 'manual'
-      ? !userHasSelectedForCurrentStep || currentStep >= targetLength
-      : currentStep >= targetLength;
-  const playDisabled = currentMode === 'manual' || currentStep >= targetLength;
-
-  let instructionText = '';
-  if (currentStep >= targetLength) {
-    instructionText = '✨ Encoding complete! Use "Previous" to review steps.';
-  } else if (currentMode === 'manual') {
-    instructionText = 'Click on a word candidate to select it and continue encoding';
-  } else {
-    instructionText = 'Click "Next" to proceed to the next character, or "Play" to auto-advance';
-  }
-
-  return (
-    <div className="container-card bg-white rounded-xl p-4">
-      <h2 className="text-lg font-semibold text-gray-800 mb-3">Controls</h2>
-      <div className="grid grid-cols-2 gap-2 mb-3">
-        <button onClick={onPrev} disabled={prevDisabled} className="control-btn secondary text-sm">
-          ← Prev
-        </button>
-        <button onClick={onNext} disabled={nextDisabled} className="control-btn primary text-sm">
-          Next →
-        </button>
-        {!isPlaying ? (
-          <button onClick={onPlay} disabled={playDisabled} className="control-btn primary text-sm">
-            ▶ Play
-          </button>
-        ) : (
-          <button onClick={onPause} className="control-btn secondary text-sm">
-            ⏸ Pause
-          </button>
-        )}
-      </div>
-      <div className="text-xs text-gray-600">
-        <p>{instructionText}</p>
-      </div>
-    </div>
-  );
-}
-
-// BeamVisualization Component
-interface BeamVisualizationProps {
-  show: boolean;
-  currentMode: string;
-  algorithmBeam: BeamPath[];
-  userPath: UserPath;
-  targetChars: string[];
-  currentStep: number;
-  modelData: Model | null;
-  wordsByChar: WordsByChar;
-  onWordSelect?: (wordId: number, score: number) => void;
-}
-
-function BeamVisualization({
-  show,
-  currentMode,
-  algorithmBeam,
-  userPath,
-  targetChars,
-  currentStep,
-  modelData,
-  wordsByChar,
-  onWordSelect,
-}: BeamVisualizationProps) {
-  if (!show || !modelData) return null;
-
-  const renderWordCandidates = (
-    candidates: Array<[number, number]>,
-    clickable: boolean
-  ) => {
-    const displayCandidates = candidates.slice(0, 8);
-
-    return (
-      <div className="flex flex-wrap gap-1">
-        {displayCandidates.map(([wordId, score], idx) => {
-          const isBreak = wordId === SENTENCE_BREAK_ID;
-          const word = isBreak ? null : modelData.vocab[wordId];
-
-          return (
-            <div
-              key={idx}
-              className="word-candidate"
-              style={{
-                cursor: clickable ? 'pointer' : 'default',
-                fontStyle: isBreak ? 'italic' : 'normal',
-                fontSize: isBreak ? '0.75rem' : '0.875rem',
-              }}
-              onClick={() => clickable && onWordSelect?.(wordId, score)}
-            >
-              {isBreak ? (
-                '⏎ Break'
-              ) : (
-                <>
-                  <span>{word}</span>
-                  <span style={{ fontSize: '0.65rem', color: '#9ca3af', marginLeft: '0.375rem' }}>
-                    {score.toFixed(1)}
-                  </span>
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  if (currentMode === 'manual') {
-    const candidates = getStepCandidates(
-      userPath,
-      targetChars,
-      currentStep,
-      modelData,
-      wordsByChar,
-      currentMode
-    );
-
-    return (
-      <div className="container-card bg-white rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold text-gray-800">
-            Top Beam Paths <span className="text-xs font-normal text-gray-600">(best 3)</span>
-          </h2>
-        </div>
-        <div className="space-y-3">
-          <div className="beam-card user-path">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <span className="text-sm font-semibold text-gray-800">Your Path</span>
-              </div>
-              <span
-                className="score-badge text-xs"
-                style={{ backgroundColor: '#d1fae5', color: '#065f46' }}
-              >
-                Score: {userPath.score.toFixed(2)}
-              </span>
-            </div>
-
-            <div className="sentence-display mb-2">
-              {sequenceToSentence(userPath.sequence, modelData.vocab) || '(start encoding)'}
-            </div>
-
-            {currentStep < targetChars.length && (
-              <>
-                <div className="text-xs font-semibold text-gray-700 mb-2">
-                  Choose next word for "{targetChars[currentStep]}":
-                </div>
-                {renderWordCandidates(candidates, true)}
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Algorithm mode - show top 3 beams
-  const beamsToDisplay = algorithmBeam.slice(0, DISPLAY_BEAMS);
-
-  return (
-    <div className="container-card bg-white rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold text-gray-800">
-          Top Beam Paths <span className="text-xs font-normal text-gray-600">(best 3)</span>
-        </h2>
-      </div>
-      <div className="space-y-3">
-        {beamsToDisplay.map((path, beamIdx) => {
-          const candidates = getStepCandidates(
-            path,
-            targetChars,
-            currentStep,
-            modelData,
-            wordsByChar,
-            currentMode
-          );
-
-          return (
-            <div key={beamIdx} className={`beam-card ${beamIdx === 0 ? 'best' : ''}`}>
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <span className="text-sm font-semibold text-gray-800">Beam #{beamIdx + 1}</span>
-                  {beamIdx === 0 && (
-                    <span className="ml-2 text-xs text-blue-600 font-semibold">★ Best</span>
-                  )}
-                </div>
-                <span className="score-badge text-xs">Score: {path.score.toFixed(2)}</span>
-              </div>
-
-              <div className="sentence-display mb-2">
-                {sequenceToSentence(path.sequence, modelData.vocab) || '(empty)'}
-              </div>
-
-              {currentStep < targetChars.length && (
-                <>
-                  <div className="text-xs font-semibold text-gray-700 mb-2">
-                    Next candidates for "{targetChars[currentStep]}":
-                  </div>
-                  {renderWordCandidates(candidates, false)}
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ComparisonPanel Component
-interface ComparisonPanelProps {
-  show: boolean;
-  algorithmBeam: BeamPath[];
-  userPath: UserPath;
-  modelData: Model | null;
-}
-
-function ComparisonPanel({ show, algorithmBeam, userPath, modelData }: ComparisonPanelProps) {
-  if (!show || !modelData || algorithmBeam.length === 0) return null;
-
-  const algorithmBest = algorithmBeam[0];
-
-  return (
-    <div className="comparison-panel p-4">
-      <h2 className="text-lg font-semibold text-gray-800 mb-3">📊 Comparison</h2>
-      <div className="space-y-3">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-700 mb-1">Algorithm:</h3>
-          <div className="sentence-display bg-white text-sm p-2">
-            {sequenceToSentence(algorithmBest.sequence, modelData.vocab) || '(empty)'}
-          </div>
-          <div className="mt-1">
-            <span className="score-badge text-xs">Score: {algorithmBest.score.toFixed(2)}</span>
-          </div>
-        </div>
-        <div>
-          <h3 className="text-sm font-semibold text-gray-700 mb-1">Your Path:</h3>
-          <div className="sentence-display bg-white text-sm p-2">
-            {sequenceToSentence(userPath.sequence, modelData.vocab) || '(empty)'}
-          </div>
-          <div className="mt-1">
-            <span
-              className="score-badge text-xs"
-              style={{ backgroundColor: '#d1fae5', color: '#065f46' }}
-            >
-              Score: {userPath.score.toFixed(2)}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+import { InputSection } from './components/InputSection';
+import { CharacterProgress } from './components/CharacterProgress';
+import { StepControls } from './components/StepControls';
+import { GraphVisualization } from './components/GraphVisualization';
+import { BeamVisualization } from './components/BeamVisualization';
+import { ComparisonPanel } from './components/ComparisonPanel';
 
 // Main Visualizer Component
 export default function Visualizer() {
@@ -606,7 +210,15 @@ export default function Visualizer() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="container-card bg-white rounded-xl p-4 mb-4">
-          <h1 className="text-2xl font-bold text-gray-800">Interactive Encoding Visualizer</h1>
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-gray-800">Interactive Encoding Visualizer</h1>
+            <Link
+              to="/"
+              className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition duration-150"
+            >
+              Encoder
+            </Link>
+          </div>
         </div>
 
         {/* Two Column Layout */}
@@ -652,7 +264,7 @@ export default function Visualizer() {
           </div>
 
           {/* Right Column */}
-          <div className="lg:col-span-8">
+          <div className="lg:col-span-8 space-y-4">
             <BeamVisualization
               show={isStarted}
               currentMode={currentMode}
@@ -663,6 +275,42 @@ export default function Visualizer() {
               modelData={modelData}
               wordsByChar={wordsByChar}
               onWordSelect={handleWordSelect}
+            />
+
+            <GraphVisualization
+              show={isStarted}
+              currentWord={
+                currentMode === 'manual'
+                  ? userPath.sequence.length > 0
+                    ? modelData?.vocab[userPath.sequence[userPath.sequence.length - 1]] || 'start'
+                    : 'start'
+                  : algorithmBeam.length > 0 && algorithmBeam[0].sequence.length > 0
+                  ? modelData?.vocab[algorithmBeam[0].sequence[algorithmBeam[0].sequence.length - 1]] || 'start'
+                  : 'start'
+              }
+              currentWordId={
+                currentMode === 'manual'
+                  ? userPath.sequence.length > 0
+                    ? userPath.sequence[userPath.sequence.length - 1]
+                    : SENTENCE_BREAK_ID
+                  : algorithmBeam.length > 0 && algorithmBeam[0].sequence.length > 0
+                  ? algorithmBeam[0].sequence[algorithmBeam[0].sequence.length - 1]
+                  : SENTENCE_BREAK_ID
+              }
+              candidates={
+                currentStep < targetChars.length
+                  ? getStepCandidates(
+                      currentMode === 'manual' ? userPath : algorithmBeam[0] || { sequence: [], score: 0 },
+                      targetChars,
+                      currentStep,
+                      modelData!,
+                      wordsByChar,
+                      currentMode
+                    )
+                  : []
+              }
+              modelData={modelData}
+              targetChar={currentStep < targetChars.length ? targetChars[currentStep] : ''}
             />
           </div>
         </div>

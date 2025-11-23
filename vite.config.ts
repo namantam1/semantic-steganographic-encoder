@@ -2,21 +2,13 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
-  base: '/semantic-steganographic-encoder/',
-  root: 'public',
-  publicDir: false, // Don't copy public dir to avoid duplicates
+  base: command === 'build' ? '/semantic-steganographic-encoder/' : '/',
+  publicDir: 'public',
   build: {
-    outDir: resolve(__dirname, 'dist'),
+    outDir: 'dist',
     emptyOutDir: true,
-    rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'public/index.html'),
-        visualizer: resolve(__dirname, 'public/visualizer.html'),
-      },
-    },
-    copyPublicDir: false,
   },
   resolve: {
     alias: {
@@ -26,4 +18,4 @@ export default defineConfig({
   server: {
     port: 3000,
   },
-});
+}));
