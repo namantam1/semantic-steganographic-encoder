@@ -10,13 +10,17 @@ import nltk
 from nltk.corpus import words
 
 # --- CONFIGURATION ---
-# How many suggestions to keep per letter. 
+# How many suggestions to keep per letter.
 # Lower = Smaller file size, Higher = Better sentence variety.
 TOP_K_PER_LETTER = 30
 
 # Minimum frequency to consider a word pair valid.
 # Helps remove "junk" connections that only appeared once.
-MIN_BIGRAM_FREQ = 2 
+MIN_BIGRAM_FREQ = 2
+
+# Chunk size for streaming processing (number of tokens per chunk)
+# Lower = Less memory usage, Higher = Faster processing
+CHUNK_SIZE = 50000 
 
 # --- 1. MOCK CORPUS (Replace this with file loading logic for production) ---
 # In a real scenario, read a large .txt file: with open('corpus.txt', 'r') as f: text = f.read()
@@ -30,19 +34,33 @@ In addition to this, we have other options.
 """
 
 def load_data():
+    """
+    Downloads data file if not cached and returns the file path.
+    Uses streaming download for memory efficiency with large files.
+    """
     cache_dir = Path(".cache")
     file_name = "data.txt"
     file_path = cache_dir / file_name
+
     if file_path.exists():
-        return file_path.read_text()
+        print(f"Using cached file: {file_path}")
+        return file_path
 
     url = "https://raw.githubusercontent.com/liux2/RNN-on-wikitext2/refs/heads/main/data/wiki.train.txt"
     print(f"Downloading {url}...")
-    response = requests.get(url)
-    text = response.text
     os.makedirs(cache_dir, exist_ok=True)
-    file_path.write_text(text)
-    return text
+
+    # Stream download in chunks to avoid loading entire file in memory
+    response = requests.get(url, stream=True)
+    response.raise_for_status()
+
+    with open(file_path, 'wb') as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+
+    print(f"Download complete: {file_path}")
+    return file_path
 
 def load_english_words():
     """
@@ -68,83 +86,142 @@ def load_english_words():
     print(f"Loaded {len(english_words)} English words for validation")
     return english_words
 
-def preprocess(text):
+def preprocess_streamed(file_path, chunk_size=CHUNK_SIZE):
     """
-    Cleans text: lowercase, removes special chars, keeps spaces.
-    """
-    text = text.lower()
-    # Keep only a-z and space. You might want to keep numbers if needed.
-    text = re.sub(r'[^a-z\s]', '', text)
-    # Collapse multiple spaces
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip().split()
+    Generator that yields preprocessed tokens in chunks.
+    Reads file line by line for memory efficiency.
 
-def build_model(tokens, english_words):
-    """
-    Constructs the Bigram model and vocab map.
-    Only includes valid English words from the dictionary.
-    """
-    print(f"Processing {len(tokens)} tokens...")
+    Args:
+        file_path: Path to the text file
+        chunk_size: Number of tokens to accumulate before yielding
 
-    # 1. Filter tokens to only valid English words
-    valid_tokens = [t for t in tokens if t in english_words]
-    print(f"Filtered to {len(valid_tokens)} valid English words (removed {len(tokens) - len(valid_tokens)} invalid/nonsense words)")
+    Yields:
+        List of preprocessed tokens (chunk)
+    """
+    buffer = []
 
-    # 2. Count individual word frequencies to build a sorted Vocab
-    word_counts = collections.Counter(valid_tokens)
-    
-    # Create ID mapping: 0 is reserved, words start at 1
-    # Sort by frequency (most common words get smaller IDs, saves JSON bytes)
+    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+        for line in f:
+            # Preprocess line: lowercase and remove non-alphabetic chars
+            line = line.lower()
+            line = re.sub(r'[^a-z\s]', '', line)
+            line = re.sub(r'\s+', ' ', line)
+
+            # Split into tokens
+            tokens = line.strip().split()
+            buffer.extend(tokens)
+
+            # Yield chunk when buffer reaches chunk_size
+            if len(buffer) >= chunk_size:
+                yield buffer
+                buffer = []
+
+        # Yield remaining tokens
+        if buffer:
+            yield buffer
+
+def build_model_incremental(file_path, english_words):
+    """
+    Constructs the Bigram model incrementally from file chunks.
+    Memory-efficient approach that processes data in chunks.
+
+    Args:
+        file_path: Path to the preprocessed text file
+        english_words: Set of valid English words for filtering
+
+    Returns:
+        Tuple of (id_to_word dict, final_transitions dict)
+    """
+    print("Building model incrementally from chunks...")
+
+    word_counts = collections.Counter()
+    raw_bigrams = collections.defaultdict(collections.Counter)
+    prev_token = None
+    total_tokens = 0
+    valid_tokens_count = 0
+    chunk_count = 0
+
+    # Process file in chunks
+    for chunk in preprocess_streamed(file_path):
+        chunk_count += 1
+        total_tokens += len(chunk)
+
+        # Filter valid English words
+        valid_chunk = [t for t in chunk if t in english_words]
+        valid_tokens_count += len(valid_chunk)
+
+        # Update word counts
+        word_counts.update(valid_chunk)
+
+        # Build bigrams within chunk
+        for i in range(len(valid_chunk) - 1):
+            curr_w = valid_chunk[i]
+            next_w = valid_chunk[i + 1]
+            raw_bigrams[curr_w][next_w] += 1
+
+        # Handle cross-chunk bigram (connect last token of prev chunk to first of current)
+        if prev_token and valid_chunk:
+            raw_bigrams[prev_token][valid_chunk[0]] += 1
+
+        # Remember last token for next chunk
+        if valid_chunk:
+            prev_token = valid_chunk[-1]
+
+        # Progress indicator every 10 chunks
+        if chunk_count % 10 == 0:
+            print(f"Processed {chunk_count} chunks, {total_tokens:,} tokens, {valid_tokens_count:,} valid words...")
+
+    print(f"\nTotal: Processed {total_tokens:,} tokens")
+    print(f"Filtered to {valid_tokens_count:,} valid English words (removed {total_tokens - valid_tokens_count:,} invalid/nonsense words)")
+
+    # Convert to ID-based structure
     sorted_vocab = [w for w, _ in word_counts.most_common()]
     word_to_id = {w: i for i, w in enumerate(sorted_vocab)}
     id_to_word = {i: w for i, w in enumerate(sorted_vocab)}
-    
+
     print(f"Vocabulary size: {len(sorted_vocab)}")
 
-    # 2. Build Bigrams: { current_word_id: { next_word_start_char: [next_word_id, freq] } }
-    # Structure: transitions[current_id]['a'] = [ (next_id, count), ... ]
-    transitions = collections.defaultdict(lambda: collections.defaultdict(list))
-    
-    # Helper to track counts before grouping
-    raw_bigrams = collections.defaultdict(collections.Counter)
+    # Convert word-based bigrams to ID-based bigrams
+    print("Converting bigrams to ID-based structure...")
+    id_bigrams = collections.defaultdict(collections.Counter)
 
-    for i in range(len(valid_tokens) - 1):
-        curr_w = valid_tokens[i]
-        next_w = valid_tokens[i+1]
-
+    for curr_w, next_counts in raw_bigrams.items():
         curr_id = word_to_id[curr_w]
-        next_id = word_to_id[next_w]
+        for next_w, count in next_counts.items():
+            next_id = word_to_id[next_w]
+            id_bigrams[curr_id][next_id] = count
 
-        raw_bigrams[curr_id][next_id] += 1
+    # Clear word-based bigrams to free memory
+    raw_bigrams.clear()
 
-    # 3. Prune and Structure
-    # We transform the raw counts into the efficient lookup structure
+    # Prune and structure
     print("Pruning and structuring data...")
-    
+
     final_transitions = {}
 
-    for curr_id, next_words_map in raw_bigrams.items():
-        
+    for curr_id, next_words_map in id_bigrams.items():
+
         # Group next words by their starting character
         char_groups = collections.defaultdict(list)
-        
+
         for next_id, count in next_words_map.items():
-            if count < MIN_BIGRAM_FREQ: continue # Skip rare connections
-            
+            if count < MIN_BIGRAM_FREQ:
+                continue  # Skip rare connections
+
             next_word_str = id_to_word[next_id]
             start_char = next_word_str[0]
-            
+
             char_groups[start_char].append((next_id, count))
-        
+
         # For each character group, sort by frequency and keep TOP_K
         optimized_groups = {}
         for char, candidates in char_groups.items():
             # Sort by count descending
             candidates.sort(key=itemgetter(1), reverse=True)
-            # Keep only the IDs, discard counts for the final JSON (we assume sorted order implies prob)
+            # Keep only the IDs, discard counts for the final JSON
             top_ids = [c[0] for c in candidates[:TOP_K_PER_LETTER]]
             optimized_groups[char] = top_ids
-        
+
         if optimized_groups:
             final_transitions[str(curr_id)] = optimized_groups
 
@@ -172,22 +249,22 @@ def save_to_file(vocab, transitions, filename="public/model_data.json"):
 # --- MAIN EXECUTION ---
 if __name__ == "__main__":
     # 0. Load English dictionary for validation
+    print("=" * 60)
+    print("SEMANTIC STEGANOGRAPHIC ENCODER - Data Builder")
+    print("=" * 60)
     english_words = load_english_words()
 
-    # 1. Load data
-    data = load_data()
+    # 1. Download/load data file (streaming download)
+    file_path = load_data()
 
-    # 2. Preprocess
-    clean_tokens = preprocess(data)
+    # 2. Build model incrementally with chunked processing
+    vocab_map, transition_graph = build_model_incremental(file_path, english_words)
 
-    # 3. Build model with dictionary validation
-    vocab_map, transition_graph = build_model(clean_tokens, english_words)
-    
     # 3. Save
     # Note: In a real app, 'vocab' array index matches the IDs in 'map'
     # We convert the dict {0: 'word'} to a list ['word'] for JSON array efficiency
     vocab_list = [vocab_map[i] for i in range(len(vocab_map))]
-    
+
     save_to_file(vocab_list, transition_graph)
 
     # --- VERIFICATION (Python Side) ---
