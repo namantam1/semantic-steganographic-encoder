@@ -8,54 +8,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
-<body class="p-4 sm:p-8 min-h-screen flex items-start justify-center">
-
-    <div id="app" class="w-full max-w-3xl container-card bg-white rounded-xl p-6 sm:p-8 space-y-8 mt-10">
-        <h1 class="text-3xl font-bold text-gray-800 border-b pb-4 mb-4">
-            Lexical Steganography Encoder
-        </h1>
-
-        <!-- Input Section -->
-        <section class="space-y-4">
-            <label for="secretInput" class="block text-lg font-medium text-gray-700">
-                Secret Message (Characters will be encoded)
-            </label>
-            <input type="text" id="secretInput" value="I am good"
-                class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-gray-800"
-                placeholder="Enter text to encode (e.g., hello)">
-
-            <button id="encodeButton"
-                class="w-full sm:w-auto px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-150 flex items-center justify-center"
-                onclick="handleEncode()">
-                <span id="buttonText">Encode Message</span>
-                <div id="loadingIndicator" class="loading-ring hidden ml-3"></div>
-            </button>
-            <div id="statusMessage" class="text-sm text-red-600 mt-2 hidden"></div>
-        </section>
-
-        <!-- Output Section -->
-        <section class="space-y-4 pt-4 border-t">
-            <h2 class="text-xl font-semibold text-gray-800">1. Encoded Cover Text</h2>
-            <div id="coverTextOutput"
-                class="min-h-12 p-4 bg-gray-50 border border-gray-200 rounded-lg text-gray-800 whitespace-pre-wrap select-all">
-                The resulting sentence will appear here.
-            </div>
-
-            <h2 class="text-xl font-semibold text-gray-800 pt-4">2. Decoded Verification</h2>
-            <div id="decodedVerification"
-                class="min-h-12 p-4 bg-gray-50 border border-gray-200 rounded-lg text-green-700 font-mono">
-                Decoded message verification (first letter of each word).
-            </div>
-
-            <h2 class="text-xl font-semibold text-gray-800 pt-4">3. Decoded Message (Word Split)</h2>
-            <div id="decodedSplit"
-                class="min-h-12 p-4 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 font-medium">
-                Decoded message automatically split into words using vocabulary.
-            </div>
-        </section>
-    </div>
-
-    <script type="module" src="/src/main.js"></script>
+<body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
 </body>
 
 </html>

@@ -5,11 +5,13 @@ import {
     encodeText,
     decodeText,
     splitIntoWords,
-    decodeAndSplit
-} from './encoder.js';
+    decodeAndSplit,
+    Model,
+    WordsByChar
+} from './encoder';
 
 // Mock model and wordsByChar data for testing
-const mockModel = {
+const mockModel: Model = {
     vocab: ['the', 'in', 'afternoon', 'time', 'is', 'apple', 'amazing', 'good', 'morning', 'night', 'test', 'today', 'xenon', 'yellow', 'zebra'],
     map: {
         '0': { // 'the'
@@ -37,7 +39,7 @@ const mockModel = {
     }
 };
 
-const mockWordsByChar = {
+const mockWordsByChar: WordsByChar = {
     't': [0, 3, 10, 11], // 'the', 'time', 'test', 'today'
     'i': [1, 4], // 'in', 'is'
     'a': [2, 5, 6], // 'afternoon', 'apple', 'amazing'
@@ -147,7 +149,7 @@ describe('encodeText', () => {
 
     it('should return error message when no valid path exists', () => {
         // Create a scenario with no valid words
-        const emptyWordsByChar = {};
+        const emptyWordsByChar: WordsByChar = {};
         const result = encodeText(mockModel, emptyWordsByChar, ['z']);
         expect(result).toBe('Encoding failed: No valid path found.');
     });
