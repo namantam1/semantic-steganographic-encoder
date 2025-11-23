@@ -10,16 +10,16 @@ This is a **Semantic Steganographic Encoder** that hides secret messages in gram
 
 The project consists of several components:
 
-1. **Python Data Builder** (`data_builder.py`): Offline preprocessing script that builds the bigram model from a text corpus
-2. **Python Steganography Engine** (`steganography.py`): Reference implementation with training and encoding/decoding logic
-3. **Vite-based Web Client**:
-   - `index.html`: Main UI structure
-   - `src/main.js`: Core encoding/decoding logic with beam search and DP word splitting (ES modules)
+1. **Vite-based Web Client** (main application):
+   - `index.html`: Main UI structure (Vite entry point)
+   - `src/main.js`: UI logic, model loading, and event handlers (ES modules)
+   - `src/encoder.js`: Core encoding/decoding logic with beam search and DP word splitting
+   - `src/encoder.test.js`: Comprehensive test suite (43 tests with vitest)
    - `src/style.css`: Custom styling and animations
-   - `public/model_data.json`: Pre-built bigram model served as static asset
-4. **Backup Directory** (`backup/`): Contains older versions and experimental implementations
-   - `data_builder.py`: Previous version of the data builder
-   - `steganography.py`: Previous version of the steganography engine
+   - `public/model_data.json`: Pre-built bigram model served as static asset (~1.4 MB)
+2. **Backup Directory** (`backup/`): Contains older versions and experimental implementations
+   - `data_builder.py`: Python script for building bigram model from text corpus (offline preprocessing)
+   - `steganography.py`: Python reference implementation with training and encoding/decoding
    - `with_temprature.html`: Experimental implementation with temperature controls
 
 ### Key Algorithm Components
@@ -30,26 +30,26 @@ The project consists of several components:
 
 ## Development Commands
 
-### Building the Model Data
+### Building the Model Data (Optional)
 
-Generate the compressed bigram model (`model_data.json`) from a text corpus:
+The project includes a pre-built `public/model_data.json` file. If you need to rebuild it from scratch, use the Python scripts in the `backup/` directory:
 
 ```bash
-python data_builder.py
+python backup/data_builder.py
 ```
 
-This downloads WikiText-2 corpus (cached in `.cache/`), builds vocabulary and transition graph, and outputs `model_data.json` (approx 1.4 MB). The generated file should be placed in the `public/` directory.
+This downloads WikiText-2 corpus (cached in `.cache/`), builds vocabulary and transition graph, and outputs `model_data.json` (approx 1.4 MB). Move the generated file to the `public/` directory.
 
-**Configuration parameters in `data_builder.py`**:
+**Configuration parameters in `backup/data_builder.py`**:
 - `TOP_K_PER_LETTER`: Number of bigram suggestions per starting letter (default: 30)
 - `MIN_BIGRAM_FREQ`: Minimum frequency threshold for valid word pairs (default: 2)
 
-### Testing the Python Implementation
+### Testing the Python Implementation (Optional)
 
-Run the standalone steganography engine:
+Run the standalone Python reference implementation:
 
 ```bash
-python steganography.py
+python backup/steganography.py
 ```
 
 This trains a model on the embedded test corpus and encodes/decodes the test message "I am good".
@@ -123,11 +123,16 @@ In `src/encoder.js`:
 
 ### JavaScript Side (Vite + ES Modules)
 
-- **Module System**: Uses ES6 imports with Vite bundler, separated into `main.js` and `encoder.js`
-- **Model Loading**: Fetches `/model_data.json` from public directory and builds `wordsByChar` lookup on initialization (`src/main.js:loadModel()`)
+- **Module System**: Uses ES6 imports with Vite bundler, separated into two main modules:
+  - `src/main.js`: UI logic, model loading, event handlers
+  - `src/encoder.js`: Pure encoding/decoding functions (easily testable)
+- **Model Loading** (`src/main.js:loadModel()`):
+  - Fetches `/model_data.json` from public directory
+  - Builds `wordsByChar` lookup for O(1) access to words by starting character
+  - Initializes on page load and runs test encoding
 - **Candidate Selection** (`src/encoder.js:getCandidates()`):
   - Uses bigram transitions first for coherent flow
-  - Returns `SENTENCE_BREAK_ID` when no bigram exists (small penalty: -0.5)
+  - Returns `SENTENCE_BREAK_ID` (-1) when no bigram exists (small penalty: -0.5)
   - Handles sentence starts after breaks by providing fresh word candidates
 - **Sentence Break Handling** (`src/encoder.js:encodeText()`):
   - Detects `SENTENCE_BREAK_ID` during beam search
@@ -135,11 +140,17 @@ In `src/encoder.js`:
   - Continues encoding with same character from fresh sentence start
   - Produces multiple properly capitalized sentences
 - **Simplified Scoring**: JavaScript uses `baseScore - (index * 0.1)` instead of true log probabilities (assumes sorted order implies probability)
-- **Word Splitting**: Dynamic programming algorithm (`src/encoder.js:splitIntoWords()`) that:
+- **Word Splitting** (`src/encoder.js:splitIntoWords()`):
+  - Dynamic programming algorithm that optimally splits decoded character strings
   - Builds a Set from vocabulary for O(1) lookups
   - Uses DP table to track minimum unrecognized characters
   - Reconstructs optimal word boundaries via parent pointers
   - Time complexity: O(n²) where n is decoded string length
+- **Testing** (`src/encoder.test.js`):
+  - 43 comprehensive tests using vitest
+  - Mock model with controlled vocabulary and transitions
+  - Tests for: basic encoding/decoding, sentence breaks, edge cases, word splitting
+  - Run with `npm run test` (watch) or `npm run test:run` (single run)
 
 ## Important Behaviors
 
@@ -155,25 +166,25 @@ In `src/encoder.js`:
 ```
 .
 ├── index.html              # Main UI structure (Vite entry point)
-├── package.json            # NPM dependencies and scripts
-├── vite.config.js          # Vite configuration
+├── package.json            # NPM dependencies (vite, vitest) and scripts
+├── vite.config.js          # Vite configuration (port 3000, base path)
 ├── src/
-│   ├── main.js             # UI logic and model loading (ES modules)
+│   ├── main.js             # UI logic, model loading, event handlers
 │   ├── encoder.js          # Core encoding/decoding logic with sentence breaks
-│   ├── encoder.test.js     # Comprehensive test suite (43 tests)
+│   ├── encoder.test.js     # Comprehensive test suite (43 tests with vitest)
 │   └── style.css           # Custom styling and animations
 ├── public/
-│   └── model_data.json     # Pre-built bigram model (1.4 MB, static asset)
-├── data_builder.py         # Builds bigram model from corpus
-├── steganography.py        # Python reference implementation
-├── CLAUDE.md               # This file
+│   └── model_data.json     # Pre-built bigram model (~1.4 MB, static asset)
+├── backup/                 # Older versions and experimental implementations
+│   ├── data_builder.py     # Builds bigram model from corpus (WikiText-2)
+│   ├── steganography.py    # Python reference implementation
+│   └── with_temprature.html # Experimental temperature controls
+├── CLAUDE.md               # This file (guidance for Claude Code)
 ├── README.md               # Project documentation
-├── .cache/                 # Cached corpus data
-├── .gitignore              # Git ignore rules (includes node_modules, dist)
-└── backup/                 # Older versions and experiments
-    ├── data_builder.py
-    ├── steganography.py
-    └── with_temprature.html
+├── .cache/                 # Cached corpus data (gitignored)
+├── .gitignore              # Git ignore rules
+├── node_modules/           # NPM dependencies (gitignored)
+└── dist/                   # Production build output (gitignored)
 ```
 
 ## Recent Improvements

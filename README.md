@@ -220,5 +220,4 @@ Test coverage includes:
 - [ ] Add option to visualize the bigram graph
 - [ ] Try tri-gram and multi-gram support
 - [ ] Better decoding with reverse dictionary
-- [ ] Migrate Tailwind CSS from CDN to PostCSS setup
 - [ ] Support for multiple punctuation marks (!, ?) beyond periods 
