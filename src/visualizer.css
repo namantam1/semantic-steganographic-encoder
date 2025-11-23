@@ -159,3 +159,29 @@
   padding: 1.5rem;
   border: 2px solid #fbbf24;
 }
+
+/* Custom scrollbar for sticky left column */
+.sticky-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sticky-sidebar::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 3px;
+}
+
+.sticky-sidebar::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+  border-radius: 3px;
+  transition: background 0.2s;
+}
+
+.sticky-sidebar::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* For Firefox */
+.sticky-sidebar {
+  scrollbar-width: thin;
+  scrollbar-color: #9ca3af #f3f4f6;
+}

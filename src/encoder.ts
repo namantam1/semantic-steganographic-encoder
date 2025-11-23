@@ -1,4 +1,4 @@
-const BEAM_WIDTH = 20;
+export const BEAM_WIDTH = 20;
 const SENTENCE_BREAK_ID = -1; // Special ID to signal a sentence break
 
 // Type definitions
@@ -15,7 +15,7 @@ export interface WordsByChar {
   [char: string]: number[];
 }
 
-interface BeamPath {
+export interface BeamPath {
   sequence: number[];
   score: number;
 }
@@ -83,18 +83,56 @@ export function getCandidates(
 }
 
 /**
- * Implements the Beam Search to find the best-scoring sentence.
+ * Converts a beam path sequence to a readable sentence string.
+ * @param model - The N-gram model containing vocab.
+ * @param path - The beam path with sequence and score.
+ * @returns The formatted sentence.
+ */
+export function pathToSentence(model: Model, path: BeamPath): string {
+  const sentences: string[] = [];
+  let currentSentence: string[] = [];
+
+  for (const id of path.sequence) {
+    if (id === SENTENCE_BREAK_ID) {
+      // End current sentence and start a new one
+      if (currentSentence.length > 0) {
+        const sentence = currentSentence.join(" ");
+        const capitalized = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+        sentences.push(capitalized + ".");
+        currentSentence = [];
+      }
+    } else {
+      currentSentence.push(model.vocab[id]);
+    }
+  }
+
+  // Add any remaining words as the final sentence
+  if (currentSentence.length > 0) {
+    const sentence = currentSentence.join(" ");
+    const capitalized = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+    sentences.push(capitalized + ".");
+  }
+
+  return sentences.join(" ");
+}
+
+/**
+ * Implements the Beam Search to find top N best-scoring sentences.
  * @param model - The N-gram model containing vocab and map.
  * @param wordsByChar - Lookup object for words by first character.
  * @param targetChars - Sequence of required starting characters.
- * @returns The encoded sentence.
+ * @param beamWidth - Width of the beam search (default: BEAM_WIDTH).
+ * @param topN - Number of top results to return (default: 1).
+ * @returns Array of top N encoded sentences with their scores.
  */
-export function encodeText(
+export function encodeTextMultiple(
   model: Model,
   wordsByChar: WordsByChar,
-  targetChars: string[]
-): string {
-  if (!targetChars || targetChars.length === 0) return "";
+  targetChars: string[],
+  beamWidth: number = BEAM_WIDTH,
+  topN: number = 1
+): Array<{ text: string; score: number }> {
+  if (!targetChars || targetChars.length === 0) return [{ text: "", score: 0 }];
 
   // Step 1: Initialize Beam with the first character
   const firstChar = targetChars[0];
@@ -102,7 +140,7 @@ export function encodeText(
 
   // Get initial candidates
   const startCandidates = wordsByChar[firstChar] || [];
-  startCandidates.slice(0, BEAM_WIDTH).forEach(w_id => {
+  startCandidates.slice(0, beamWidth).forEach(w_id => {
     beam.push({
       sequence: [w_id],
       score: 0.0 // Start score is zero
@@ -156,40 +194,34 @@ export function encodeText(
     }
 
     newBeam.sort((a, b) => b.score - a.score);
-    beam = newBeam.slice(0, BEAM_WIDTH);
+    beam = newBeam.slice(0, beamWidth);
   }
 
-  // Step 3: Return best sentence
-  if (beam.length === 0) return "Encoding failed: No valid path found.";
+  // Step 3: Return top N sentences
+  if (beam.length === 0) return [{ text: "Encoding failed: No valid path found.", score: 0 }];
 
-  const bestPath = beam[0];
+  const topPaths = beam.slice(0, Math.min(topN, beam.length));
 
-  // Convert sequence to words, handling sentence breaks
-  const sentences: string[] = [];
-  let currentSentence: string[] = [];
+  return topPaths.map(path => ({
+    text: pathToSentence(model, path),
+    score: path.score
+  }));
+}
 
-  for (const id of bestPath.sequence) {
-    if (id === SENTENCE_BREAK_ID) {
-      // End current sentence and start a new one
-      if (currentSentence.length > 0) {
-        const sentence = currentSentence.join(" ");
-        const capitalized = sentence.charAt(0).toUpperCase() + sentence.slice(1);
-        sentences.push(capitalized + ".");
-        currentSentence = [];
-      }
-    } else {
-      currentSentence.push(model.vocab[id]);
-    }
-  }
-
-  // Add any remaining words as the final sentence
-  if (currentSentence.length > 0) {
-    const sentence = currentSentence.join(" ");
-    const capitalized = sentence.charAt(0).toUpperCase() + sentence.slice(1);
-    sentences.push(capitalized + ".");
-  }
-
-  return sentences.join(" ");
+/**
+ * Implements the Beam Search to find the best-scoring sentence.
+ * @param model - The N-gram model containing vocab and map.
+ * @param wordsByChar - Lookup object for words by first character.
+ * @param targetChars - Sequence of required starting characters.
+ * @returns The encoded sentence.
+ */
+export function encodeText(
+  model: Model,
+  wordsByChar: WordsByChar,
+  targetChars: string[]
+): string {
+  const results = encodeTextMultiple(model, wordsByChar, targetChars, BEAM_WIDTH, 1);
+  return results[0].text;
 }
 
 /**

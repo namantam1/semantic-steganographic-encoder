@@ -223,44 +223,46 @@ export default function Visualizer() {
 
         {/* Two Column Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Left Column */}
-          <div className="lg:col-span-4 space-y-4">
-            <InputSection
-              secretText={secretText}
-              onSecretChange={setSecretText}
-              onStart={handleStart}
-              onReset={handleReset}
-              currentMode={currentMode}
-              onModeChange={handleModeChange}
-            />
-
-            <CharacterProgress
-              targetChars={targetChars}
-              currentStep={currentStep}
-              show={isStarted}
-            />
-
-            <StepControls
-              show={isStarted}
-              currentStep={currentStep}
-              targetLength={targetChars.length}
-              currentMode={currentMode}
-              userHistoryLength={userHistory.length}
-              isPlaying={isPlaying}
-              onPrev={handlePrev}
-              onNext={handleNext}
-              onPlay={handlePlay}
-              onPause={handlePause}
-            />
-
-            {currentMode === 'manual' && (
-              <ComparisonPanel
-                show={isStarted}
-                algorithmBeam={algorithmBeam}
-                userPath={userPath}
-                modelData={modelData}
+          {/* Left Column - Sticky */}
+          <div className="lg:col-span-4">
+            <div className="sticky-sidebar lg:sticky lg:top-4 space-y-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
+              <InputSection
+                secretText={secretText}
+                onSecretChange={setSecretText}
+                onStart={handleStart}
+                onReset={handleReset}
+                currentMode={currentMode}
+                onModeChange={handleModeChange}
               />
-            )}
+
+              <CharacterProgress
+                targetChars={targetChars}
+                currentStep={currentStep}
+                show={isStarted}
+              />
+
+              <StepControls
+                show={isStarted}
+                currentStep={currentStep}
+                targetLength={targetChars.length}
+                currentMode={currentMode}
+                userHistoryLength={userHistory.length}
+                isPlaying={isPlaying}
+                onPrev={handlePrev}
+                onNext={handleNext}
+                onPlay={handlePlay}
+                onPause={handlePause}
+              />
+
+              {currentMode === 'manual' && (
+                <ComparisonPanel
+                  show={isStarted}
+                  algorithmBeam={algorithmBeam}
+                  userPath={userPath}
+                  modelData={modelData}
+                />
+              )}
+            </div>
           </div>
 
           {/* Right Column */}
