@@ -1,5 +1,5 @@
 const BEAM_WIDTH = 20;
-const FALLBACK_PENALTY = -20.0; // Heavy penalty for using a non-bigram word
+const SENTENCE_BREAK_ID = -1; // Special ID to signal a sentence break
 
 /**
  * Cleans the secret text to get the sequence of target characters.
@@ -14,13 +14,24 @@ export function getTargetChars(text) {
  * Finds valid next words using the Beam Search algorithm.
  * @param {Object} model - The N-gram model containing vocab and map.
  * @param {Object} wordsByChar - Lookup object for words by first character.
- * @param {number} currentWordId - ID of the last word in the path.
+ * @param {number} currentWordId - ID of the last word in the path (or SENTENCE_BREAK_ID for sentence start).
  * @param {string} targetChar - The required starting letter of the next word.
  * @returns {Array<[number, number]>} List of [next_word_id, log_probability_score].
  */
 export function getCandidates(model, wordsByChar, currentWordId, targetChar) {
-    const currentIdStr = String(currentWordId);
     const candidates = [];
+
+    // If we're starting a new sentence (after a break), skip bigram lookup
+    if (currentWordId === SENTENCE_BREAK_ID) {
+        const startWords = wordsByChar[targetChar] || [];
+        startWords.slice(0, BEAM_WIDTH).forEach((wordId, index) => {
+            const score = 0.0 - (index * 0.1);
+            candidates.push([wordId, score]);
+        });
+        return candidates;
+    }
+
+    const currentIdStr = String(currentWordId);
 
     // Strategy A: Look at the N-Gram Graph (Coherent transition)
     const transitions = model.map[currentIdStr];
@@ -37,13 +48,11 @@ export function getCandidates(model, wordsByChar, currentWordId, targetChar) {
         });
     }
 
-    // Strategy B: Fallback (If Strategy A found nothing or is first word)
+    // Strategy B: Sentence Break (If Strategy A found nothing)
+    // Instead of using fallback words with heavy penalty, we signal a sentence break
     if (candidates.length === 0) {
-        const fallbackWords = wordsByChar[targetChar] || [];
-        // Apply a heavy penalty for breaking grammatical flow
-        fallbackWords.slice(0, 5).forEach(wordId => {
-            candidates.push([wordId, FALLBACK_PENALTY]);
-        });
+        // Return a special SENTENCE_BREAK_ID to signal we should end the sentence
+        candidates.push([SENTENCE_BREAK_ID, -0.5]); // Small penalty for breaking sentence
     }
 
     return candidates;
@@ -63,7 +72,7 @@ export function encodeText(model, wordsByChar, targetChars) {
     const firstChar = targetChars[0];
     let beam = [];
 
-    // Get initial candidates (uses fallback logic implicitly)
+    // Get initial candidates
     const startCandidates = wordsByChar[firstChar] || [];
     startCandidates.slice(0, BEAM_WIDTH).forEach(w_id => {
         beam.push({
@@ -84,10 +93,30 @@ export function encodeText(model, wordsByChar, targetChars) {
             const candidates = getCandidates(model, wordsByChar, lastWordId, targetChar);
 
             for (const [nextWordId, transScore] of candidates) {
-                newBeam.push({
-                    sequence: [...path.sequence, nextWordId],
-                    score: currentScore + transScore
-                });
+                // If we get a SENTENCE_BREAK_ID, we need to add it and then find a word for this character
+                if (nextWordId === SENTENCE_BREAK_ID) {
+                    // Add the sentence break
+                    const withBreak = {
+                        sequence: [...path.sequence, SENTENCE_BREAK_ID],
+                        score: currentScore + transScore
+                    };
+
+                    // Now get candidates for the current character as a sentence start
+                    const restartCandidates = getCandidates(model, wordsByChar, SENTENCE_BREAK_ID, targetChar);
+
+                    for (const [restartWordId, restartScore] of restartCandidates) {
+                        newBeam.push({
+                            sequence: [...withBreak.sequence, restartWordId],
+                            score: withBreak.score + restartScore
+                        });
+                    }
+                } else {
+                    // Normal bigram transition
+                    newBeam.push({
+                        sequence: [...path.sequence, nextWordId],
+                        score: currentScore + transScore
+                    });
+                }
             }
         }
 
@@ -106,11 +135,33 @@ export function encodeText(model, wordsByChar, targetChars) {
     if (beam.length === 0) return "Encoding failed: No valid path found.";
 
     const bestPath = beam[0];
-    const decodedWords = bestPath.sequence.map(id => model.vocab[id]);
 
-    // Capitalize first letter and add a period for style
-    const sentence = decodedWords.join(" ");
-    return sentence.charAt(0).toUpperCase() + sentence.slice(1) + ".";
+    // Convert sequence to words, handling sentence breaks
+    const sentences = [];
+    let currentSentence = [];
+
+    for (const id of bestPath.sequence) {
+        if (id === SENTENCE_BREAK_ID) {
+            // End current sentence and start a new one
+            if (currentSentence.length > 0) {
+                const sentence = currentSentence.join(" ");
+                const capitalized = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+                sentences.push(capitalized + ".");
+                currentSentence = [];
+            }
+        } else {
+            currentSentence.push(model.vocab[id]);
+        }
+    }
+
+    // Add any remaining words as the final sentence
+    if (currentSentence.length > 0) {
+        const sentence = currentSentence.join(" ");
+        const capitalized = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+        sentences.push(capitalized + ".");
+    }
+
+    return sentences.join(" ");
 }
 
 /**

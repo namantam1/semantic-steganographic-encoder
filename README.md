@@ -77,13 +77,20 @@ For each remaining required character in the sequence:
 
 #### 2.3. Candidate Selection (`GET_CANDIDATES`)
 
-This function implements the core probability-based selection with a necessary fallback:
+This function implements the core probability-based selection with a sentence break mechanism:
 
 
 ```js
 GET_CANDIDATES(current_word_id, target_char)
 // Strategy 1: N-Gram Lookup (Coherent Flow)
 candidates = []
+
+// Special case: Starting a new sentence
+IF current_word_id == SENTENCE_BREAK_ID:
+    // Return words for fresh sentence start
+    candidates = WORDS_BY_CHAR[target_char]
+    RETURN candidates with descending scores
+
 transition_ids = TRANSITIONS[current_word_id][target_char]
 
 IF transition_ids IS NOT EMPTY:
@@ -91,23 +98,34 @@ IF transition_ids IS NOT EMPTY:
     FOR each ID in transition_ids:
         score = BASE_SCORE - (index * 0.1) // Prefer the most frequent
         candidates.ADD(ID, score)
-    
-// Strategy 2: Fallback (Ensure Progress)
+
+// Strategy 2: Sentence Break (Natural Flow)
 ELSE IF candidates IS EMPTY:
-    fallback_ids = WORDS_BY_CHAR[target_char]
-    
-    // Apply heavy penalty (e.g., -20.0) to prioritize Strategy 1 if possible
-    FOR each ID in fallback_ids (subset):
-        candidates.ADD(ID, FALLBACK_PENALTY)
+    // Signal to end current sentence and start a new one
+    candidates.ADD(SENTENCE_BREAK_ID, -0.5) // Small penalty for breaking
 
 RETURN candidates // List of (Word ID, Score)
 ```
 
-#### 2.4. Final Output
+**Key Enhancement:** Instead of using heavily penalized fallback words, the algorithm now creates natural sentence boundaries with periods when bigram transitions don't exist. This produces more realistic and grammatically coherent cover text.
+
+#### 2.4. Sentence Break Handling
+
+When a `SENTENCE_BREAK_ID` is encountered during beam search:
+
+1. Add the `SENTENCE_BREAK_ID` to the sequence
+2. End the current sentence with a period
+3. Start a new sentence with the same target character
+4. Continue encoding normally with fresh word candidates
+
+This creates output like: `"The cat sat. On mat today."` instead of forced awkward transitions.
+
+#### 2.5. Final Output
 
 1.  Select the path with the highest overall score from the final beam.
 2.  Translate the sequence of Word IDs back into words using the `VOCAB` list.
-3.  Join the words to form the final cover sentence.
+3.  Split sequences at `SENTENCE_BREAK_ID` markers to create multiple sentences.
+4.  Capitalize the first letter of each sentence and add periods.
 
 ---
 
@@ -129,79 +147,6 @@ FOR each word in words:
 // 3. Join characters to form the original secret
 RETURN decoded_chars.JOIN_AS_STRING()
 ```
-
-# Making it more playable
-
-A fixed, deterministic selection (always picking the highest-scored path) quickly leads to the same encoded sentence every time, which defeats the purpose of making it hard to predict.
-
-Temperature allows you to control the trade-off between **coherence** (low randomness) and **variety** (high randomness).
-
----
-
-## 1. The Role of the Temperature Parameter ($T$)
-
-In generative models, $T$ controls the "spikiness" of the probability distribution used for sampling the next token (word).
-
-| Parameter Value       | Effect on Distribution                 | Encoding Output                                                                                                                                  |
-| :-------------------- | :------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **$T \rightarrow 0$** | Sharpens the probability curve.        | Highly predictable, favoring only the highest-scored words. **Best coherence**, but **zero variety.**                                            |
-| **$T = 1.0$**         | The standard probability distribution. | The likelihood of each word is respected. Good balance of coherence and variety.                                                                 |
-| **$T > 1.0$**         | Flattens the probability curve.        | **Less probable** words (lower scores) have a much higher chance of being selected. High variety, but a **higher risk of generating gibberish.** |
-
----
-
-## 2. Implementing Temperature in Beam Search
-
-To incorporate temperature, the process must change from a deterministic sorting (pruning the beam) to a **Stochastic Sampling** step.
-
-### A. Requirement: Real Scores
-
-The simplified scoring (e.g., `score - (index * 0.1)`) is insufficient. The underlying Python model would need to export the actual **Log Probabilities** (or counts) for each bigram transition, allowing for a genuine probability distribution calculation in JavaScript. For this plan, we assume the scores used are *log probabilities* ($\text{score} = \ln(\text{probability})$).
-
-### B. The Updated Selection Logic
-
-Instead of simply comparing scores, the next word selection must use **Softmax** scaling and **Random Sampling**.
-
-We will modify the core loop to apply temperature when calculating the weights for the next set of candidates:
-
-
-```js
-FUNCTION SELECT_NEXT_WORD_ID(current_word_id, target_char, T, beam_width):
-
-    // 1. Get all candidates (IDs and Log Prob Scores) using the N-Gram logic
-    candidates = GET_ALL_CANDIDATES(current_word_id, target_char)
-    
-    // 2. Prepare for Sampling (Softmax with Temperature)
-    
-    // Extract scores (Log Probabilities) and IDs
-    scores = [c.score for c in candidates]
-    
-    // Apply Temperature: Divide each score by T
-    temp_adjusted_scores = [score / T for score in scores]
-
-    // Apply Softmax: Convert scores back into a normalized probability distribution (P)
-    // P = exp(score/T) / SUM(exp(score_i/T))
-    
-    exponentiated_scores = [EXP(s) for s in temp_adjusted_scores]
-    sum_exp_scores = SUM(exponentiated_scores)
-    
-    probabilities = [e / sum_exp_scores for e in exponentiated_scores]
-
-    // 3. Sample
-    
-    // Perform N random samples (where N = beam_width) weighted by P
-    sampled_next_word_ids = SAMPLE_N_FROM_CANDIDATES(probabilities, beam_width)
-    
-    // The new paths are created based on these randomly selected (but weighted) IDs.
-    RETURN sampled_next_word_ids
-```
-
-
-### C. Impact on Beam Search
-
-1.  **Coherence:** The Beam Search structure remains crucial; it ensures that even with randomness, the algorithm only pursues the *best overall sequences* (paths with the highest cumulative scores).
-2.  **Variety:** By introducing the sampling step, running the encoder twice with the same input will almost certainly produce two different, yet coherent, output sentences. This dramatically improves the cryptographic quality of the encoding.
-
 
 ---
 
@@ -246,17 +191,34 @@ This downloads the WikiText-2 corpus and outputs `model_data.json`. Move the gen
 ## Features
 
 - ✅ Beam search with configurable width
-- ✅ Fallback mechanism for missing bigrams
+- ✅ Sentence break mechanism for natural text flow
 - ✅ Dynamic programming word splitter for decoded output
+- ✅ Comprehensive test suite (43 tests with vitest)
 - ✅ ES6 modules with tree-shaking
 - ✅ Hot Module Replacement (HMR)
 - ✅ Optimized production builds
 
+## Testing
+
+Run the test suite:
+
+```bash
+npm run test        # Watch mode
+npm run test:run    # Single run
+```
+
+Test coverage includes:
+- Unit tests for all core functions
+- Sentence break feature tests
+- Integration tests for encode/decode workflow
+- Edge case handling
+
 ## Ideas to Improve
 
-- [ ] Add UI controls for beam width, temperature, and fallback penalty
+- [ ] Add UI controls for beam width and sentence break penalty
 - [ ] Add option to use custom text corpus
-- [ ] Add option to visualize the bigram
+- [ ] Add option to visualize the bigram graph
 - [ ] Try tri-gram and multi-gram support
 - [ ] Better decoding with reverse dictionary
-- [ ] Migrate Tailwind CSS from CDN to PostCSS setup 
+- [ ] Migrate Tailwind CSS from CDN to PostCSS setup
+- [ ] Support for multiple punctuation marks (!, ?) beyond periods 
