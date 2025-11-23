@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 
 /** @type {import('vite').UserConfig} */
 export default defineConfig({
-  base: '/wasm-explorer/',
+  base: '/semantic-steganographic-encoder/',
   root: '.',
   publicDir: 'public',
   build: {
