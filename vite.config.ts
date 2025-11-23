@@ -5,16 +5,22 @@ import { resolve } from 'path';
 export default defineConfig({
   plugins: [react()],
   base: '/semantic-steganographic-encoder/',
-  root: '.',
-  publicDir: 'public',
+  root: 'public',
+  publicDir: false, // Don't copy public dir to avoid duplicates
   build: {
-    outDir: 'dist',
+    outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'public/index.html'),
         visualizer: resolve(__dirname, 'public/visualizer.html'),
       },
+    },
+    copyPublicDir: false,
+  },
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, 'src'),
     },
   },
   server: {
