@@ -10,7 +10,8 @@ import {
   Handle,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Model, SENTENCE_BREAK_ID } from '../visualizer-logic';
+import { Model, ModelType } from '../../lib/types';
+import { SENTENCE_BREAK_ID } from '../visualizer-logic';
 
 interface GraphVisualizationProps {
   show: boolean;
@@ -19,6 +20,7 @@ interface GraphVisualizationProps {
   candidates: Array<[number, number]>;
   modelData: Model | null;
   targetChar: string;
+  prevWordId?: number; // For trigram models
 }
 
 // Custom node component for grouped candidates
@@ -63,6 +65,7 @@ const nodeTypes = {
 export function GraphVisualization({
   show,
   currentWord,
+  currentWordId,
   candidates,
   modelData,
 }: GraphVisualizationProps) {
@@ -70,20 +73,74 @@ export function GraphVisualization({
   const getSecondLevelCandidates = useCallback((wordId: number): Array<[string, number]> => {
     if (!modelData || wordId === SENTENCE_BREAK_ID) return [];
 
-    const wordIdStr = String(wordId);
-    const transitions = modelData.map[wordIdStr];
-    if (!transitions) return [];
+    const nextWords: Array<[string, number]> = [];
+
+    // Handle different model types
+    if (modelData.type === ModelType.BIGRAM) {
+      const wordIdStr = String(wordId);
+      const transitions = modelData.map[wordIdStr];
+      if (!transitions) return [];
+
+      const chars = Object.keys(transitions).slice(0, 2);
+
+      chars.forEach((char) => {
+        const wordIds = transitions[char];
+        if (Array.isArray(wordIds) && wordIds.length > 0) {
+          // Get multiple candidates per character (up to 3)
+          wordIds.slice(0, 3).forEach((nextWordId, idx) => {
+            const nextWord = modelData.vocab[nextWordId];
+            const score = 1.0 - (idx * 0.2) - (nextWords.length * 0.05);
+            nextWords.push([nextWord, score]);
+          });
+        }
+      });
+    } else if (modelData.type === ModelType.TRIGRAM) {
+      // For trigram, we need both previous and current word
+      const prevWordIdStr = String(currentWordId);
+      const currentWordIdStr = String(wordId);
+
+      const transitions = modelData.map[prevWordIdStr]?.[currentWordIdStr];
+      if (!transitions) return [];
+
+      const chars = Object.keys(transitions).slice(0, 2);
+
+      chars.forEach((char) => {
+        const wordIds = transitions[char];
+        if (Array.isArray(wordIds) && wordIds.length > 0) {
+          // Get multiple candidates per character (up to 3)
+          wordIds.slice(0, 3).forEach((nextWordId, idx) => {
+            const nextWord = modelData.vocab[nextWordId];
+            const score = 1.0 - (idx * 0.2) - (nextWords.length * 0.05);
+            nextWords.push([nextWord, score]);
+          });
+        }
+      });
+    }
+
+    return nextWords;
+  }, [modelData, currentWordId]);
+
+  // Get third-level candidates (only for trigram models)
+  const getThirdLevelCandidates = useCallback((prevWordId: number, currentWordId: number): Array<[string, number]> => {
+    if (!modelData || modelData.type !== ModelType.TRIGRAM) return [];
+    if (prevWordId === SENTENCE_BREAK_ID || currentWordId === SENTENCE_BREAK_ID) return [];
 
     const nextWords: Array<[string, number]> = [];
+    const prevWordIdStr = String(prevWordId);
+    const currentWordIdStr = String(currentWordId);
+
+    const transitions = modelData.map[prevWordIdStr]?.[currentWordIdStr];
+    if (!transitions) return [];
+
     const chars = Object.keys(transitions).slice(0, 2);
 
     chars.forEach((char) => {
       const wordIds = transitions[char];
-      if (wordIds && wordIds.length > 0) {
-        // Get multiple candidates per character (up to 3)
-        wordIds.slice(0, 3).forEach((nextWordId, idx) => {
+      if (Array.isArray(wordIds) && wordIds.length > 0) {
+        // Get fewer candidates for level 3 to avoid clutter (up to 2)
+        wordIds.slice(0, 2).forEach((nextWordId, idx) => {
           const nextWord = modelData.vocab[nextWordId];
-          const score = 1.0 - (idx * 0.2) - (nextWords.length * 0.05);
+          const score = 0.8 - (idx * 0.2) - (nextWords.length * 0.05);
           nextWords.push([nextWord, score]);
         });
       }
@@ -211,19 +268,71 @@ export function GraphVisualization({
               height: 20,
             },
           });
+
+          // Add third level for trigram models (showing deeper lookahead)
+          if (modelData.type === ModelType.TRIGRAM && secondLevel.length > 0) {
+            // Get the word ID from the first item in secondLevel to show what comes next
+            // We'll create grouped third-level nodes for the first few second-level items
+            secondLevel.slice(0, 2).forEach(([secondLevelWord, _], secondIdx) => {
+              // Find the word ID for this second-level word
+              const secondLevelWordId = modelData.vocab.indexOf(secondLevelWord);
+              if (secondLevelWordId === -1) return;
+
+              // Get third-level candidates using the context: [wordId, secondLevelWordId]
+              const thirdLevel = getThirdLevelCandidates(wordId, secondLevelWordId);
+              if (thirdLevel.length > 0) {
+                const level3Id = `level3-${idx}-${secondIdx}`;
+
+                nodes.push({
+                  id: level3Id,
+                  type: 'groupedCandidates',
+                  data: { items: thirdLevel },
+                  position: {
+                    x: horizontalSpacing * 3,
+                    y: level1Y - 60 + (secondIdx * 120)
+                  },
+                  sourcePosition: Position.Right,
+                  targetPosition: Position.Left,
+                  style: {
+                    opacity: 0.85, // Slightly faded to indicate deeper level
+                  },
+                });
+
+                edges.push({
+                  id: `edge-${level2Id}-${level3Id}`,
+                  source: level2Id,
+                  target: level3Id,
+                  type: ConnectionLineType.Straight,
+                  style: {
+                    stroke: '#6b7280',
+                    strokeWidth: 1.5,
+                    opacity: 0.7,
+                  },
+                  markerEnd: {
+                    type: 'arrowclosed',
+                    color: '#6b7280',
+                    width: 16,
+                    height: 16,
+                  },
+                });
+              }
+            });
+          }
         }
       }
     });
 
     return { nodes, edges };
-  }, [show, currentWord, candidates, modelData, getSecondLevelCandidates]);
+  }, [show, currentWord, candidates, modelData, getSecondLevelCandidates, getThirdLevelCandidates]);
 
   if (!show) return null;
+
+  const modelTypeName = modelData?.type === ModelType.TRIGRAM ? 'Tri-gram' : 'Bi-gram';
 
   return (
     <div className="container-card bg-white rounded-xl p-4">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold text-gray-800">[4] Visualize Bi-gram.</h2>
+        <h2 className="text-lg font-semibold text-gray-800">[4] Visualize {modelTypeName}.</h2>
         <div className="text-xs text-gray-600">
           Mouse wheel / trackpad to zoom. Left button to pan (click and drag).
         </div>

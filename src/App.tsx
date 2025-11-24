@@ -236,12 +236,20 @@ export default function App() {
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">
               Lexical Steganography
             </h1>
-            <Link
-              to="/visualizer"
-              className="px-4 py-2 bg-purple-600 text-white font-medium rounded-lg hover:bg-purple-700 transition duration-150 shadow-sm"
-            >
-              Visualizer
-            </Link>
+            <div className="flex gap-2">
+              <Link
+                to="/model-explorer"
+                className="px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition duration-150 shadow-sm"
+              >
+                Model Explorer
+              </Link>
+              <Link
+                to="/visualizer"
+                className="px-4 py-2 bg-purple-600 text-white font-medium rounded-lg hover:bg-purple-700 transition duration-150 shadow-sm"
+              >
+                Visualizer
+              </Link>
+            </div>
           </div>
 
           {/* Tabs */}

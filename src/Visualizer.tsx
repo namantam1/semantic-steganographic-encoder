@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import './style.css';
 import './visualizer.css';
-import type { Model, WordsByChar } from '../lib/types';
+import type { Model, WordsByChar, BigramModel, TrigramModel } from '../lib/types';
+import { ModelType } from '../lib/types';
 import {
   initializeBeam,
   initializeUserPath,
@@ -23,10 +24,13 @@ import { ComparisonPanel } from './components/ComparisonPanel';
 
 // Main Visualizer Component
 export default function Visualizer() {
-  const [modelData, setModelData] = useState<Model | null>(null);
+  const [bigramModel, setBigramModel] = useState<BigramModel | null>(null);
+  const [trigramModel, setTrigramModel] = useState<TrigramModel | null>(null);
+  const [activeModel, setActiveModel] = useState<Model | null>(null);
   const [wordsByChar, setWordsByChar] = useState<WordsByChar>({});
   const [secretText, setSecretText] = useState('hello');
   const [currentMode, setCurrentMode] = useState('algorithm');
+  const [modelType, setModelType] = useState<ModelType>(ModelType.BIGRAM);
   const [isStarted, setIsStarted] = useState(false);
   const [targetChars, setTargetChars] = useState<string[]>([]);
   const [currentStep, setCurrentStep] = useState(0);
@@ -37,40 +41,64 @@ export default function Visualizer() {
   const [isPlaying, setIsPlaying] = useState(false);
   const playIntervalRef = useRef<number | null>(null);
 
-  // Load model on mount
+  // Load models on mount
   useEffect(() => {
-    async function loadModel() {
+    async function loadModels() {
       try {
-        const response = await fetch('model_data.json');
-        const data = await response.json();
-
-        const loadedModel: Model = {
-          vocab: data.vocab,
-          map: data.map,
+        // Load bigram model
+        const bigramResponse = await fetch('model_data.json');
+        if (!bigramResponse.ok) {
+          throw new Error(`HTTP error loading bigram model! status: ${bigramResponse.status}`);
+        }
+        const bigramData = await bigramResponse.json();
+        const loadedBigramModel: BigramModel = {
+          type: ModelType.BIGRAM,
+          vocab: bigramData.vocab,
+          map: bigramData.map,
         };
+        setBigramModel(loadedBigramModel);
+        console.log(`Bigram model loaded. Vocab size: ${loadedBigramModel.vocab.length}`);
 
+        // Load trigram model
+        const trigramResponse = await fetch('model_data_trigram.json');
+        if (!trigramResponse.ok) {
+          throw new Error(`HTTP error loading trigram model! status: ${trigramResponse.status}`);
+        }
+        const trigramData = await trigramResponse.json();
+        const loadedTrigramModel: TrigramModel = {
+          type: ModelType.TRIGRAM,
+          vocab: trigramData.vocab,
+          map: trigramData.map,
+        };
+        setTrigramModel(loadedTrigramModel);
+        console.log(`Trigram model loaded. Vocab size: ${loadedTrigramModel.vocab.length}`);
+
+        // Create the wordsByChar structure from bigram vocab (same for both models)
         const wordsByCharMap: WordsByChar = {};
-        loadedModel.vocab.forEach((word, idx) => {
+        loadedBigramModel.vocab.forEach((word, idx) => {
           const firstChar = word[0];
           if (!wordsByCharMap[firstChar]) {
             wordsByCharMap[firstChar] = [];
           }
           wordsByCharMap[firstChar].push(idx);
         });
-
-        setModelData(loadedModel);
         setWordsByChar(wordsByCharMap);
-        console.log('Model loaded:', {
-          vocabSize: loadedModel.vocab.length,
+
+        // Set initial active model to bigram
+        setActiveModel(loadedBigramModel);
+
+        console.log('Models loaded:', {
+          bigramVocabSize: loadedBigramModel.vocab.length,
+          trigramVocabSize: loadedTrigramModel.vocab.length,
           wordsByCharKeys: Object.keys(wordsByCharMap).length,
         });
       } catch (error) {
-        console.error('Error loading model:', error);
+        console.error('Error loading models:', error);
         alert('Failed to load model data');
       }
     }
 
-    loadModel();
+    loadModels();
   }, []);
 
   // Cleanup play interval on unmount
@@ -82,8 +110,17 @@ export default function Visualizer() {
     };
   }, []);
 
+  // Update active model when model type changes
+  useEffect(() => {
+    if (modelType === ModelType.BIGRAM && bigramModel) {
+      setActiveModel(bigramModel);
+    } else if (modelType === ModelType.TRIGRAM && trigramModel) {
+      setActiveModel(trigramModel);
+    }
+  }, [modelType, bigramModel, trigramModel]);
+
   const handleStart = () => {
-    if (!modelData) return;
+    if (!activeModel) return;
 
     const validation = validateMessage(secretText);
     if (!validation.isValid) {
@@ -121,13 +158,13 @@ export default function Visualizer() {
   };
 
   const algorithmStep = () => {
-    if (!modelData || currentStep >= targetChars.length) return;
+    if (!activeModel || currentStep >= targetChars.length) return;
 
     const newBeam = performBeamStep(
       algorithmBeam,
       targetChars,
       currentStep,
-      modelData,
+      activeModel,
       wordsByChar
     );
     setAlgorithmBeam(newBeam);
@@ -184,7 +221,7 @@ export default function Visualizer() {
   };
 
   const handleWordSelect = (wordId: number, score: number) => {
-    if (currentMode !== 'manual' || !modelData) return;
+    if (currentMode !== 'manual' || !activeModel) return;
 
     const result = handleWordSelectionLogic(userPath, wordId, score, currentStep);
 
@@ -212,12 +249,20 @@ export default function Visualizer() {
         <div className="container-card bg-white rounded-xl p-4 mb-4">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-gray-800">Interactive Encoding Visualizer</h1>
-            <Link
-              to="/"
-              className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition duration-150"
-            >
-              Encoder
-            </Link>
+            <div className="flex gap-2">
+              <Link
+                to="/model-explorer"
+                className="px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition duration-150"
+              >
+                Model Explorer
+              </Link>
+              <Link
+                to="/"
+                className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition duration-150"
+              >
+                Encoder
+              </Link>
+            </div>
           </div>
         </div>
 
@@ -233,6 +278,8 @@ export default function Visualizer() {
                 onReset={handleReset}
                 currentMode={currentMode}
                 onModeChange={handleModeChange}
+                modelType={modelType}
+                onModelTypeChange={setModelType}
               />
 
               <CharacterProgress
@@ -259,7 +306,7 @@ export default function Visualizer() {
                   show={isStarted}
                   algorithmBeam={algorithmBeam}
                   userPath={userPath}
-                  modelData={modelData}
+                  modelData={activeModel}
                 />
               )}
             </div>
@@ -274,7 +321,7 @@ export default function Visualizer() {
               userPath={userPath}
               targetChars={targetChars}
               currentStep={currentStep}
-              modelData={modelData}
+              modelData={activeModel}
               wordsByChar={wordsByChar}
               onWordSelect={handleWordSelect}
             />
@@ -284,10 +331,10 @@ export default function Visualizer() {
               currentWord={
                 currentMode === 'manual'
                   ? userPath.sequence.length > 0
-                    ? modelData?.vocab[userPath.sequence[userPath.sequence.length - 1]] || 'start'
+                    ? activeModel?.vocab[userPath.sequence[userPath.sequence.length - 1]] || 'start'
                     : 'start'
                   : algorithmBeam.length > 0 && algorithmBeam[0].sequence.length > 0
-                  ? modelData?.vocab[algorithmBeam[0].sequence[algorithmBeam[0].sequence.length - 1]] || 'start'
+                  ? activeModel?.vocab[algorithmBeam[0].sequence[algorithmBeam[0].sequence.length - 1]] || 'start'
                   : 'start'
               }
               currentWordId={
@@ -299,19 +346,28 @@ export default function Visualizer() {
                   ? algorithmBeam[0].sequence[algorithmBeam[0].sequence.length - 1]
                   : SENTENCE_BREAK_ID
               }
+              prevWordId={
+                currentMode === 'manual'
+                  ? userPath.sequence.length > 1
+                    ? userPath.sequence[userPath.sequence.length - 2]
+                    : SENTENCE_BREAK_ID
+                  : algorithmBeam.length > 0 && algorithmBeam[0].sequence.length > 1
+                  ? algorithmBeam[0].sequence[algorithmBeam[0].sequence.length - 2]
+                  : SENTENCE_BREAK_ID
+              }
               candidates={
                 currentStep < targetChars.length
                   ? getStepCandidates(
                       currentMode === 'manual' ? userPath : algorithmBeam[0] || { sequence: [], score: 0 },
                       targetChars,
                       currentStep,
-                      modelData!,
+                      activeModel!,
                       wordsByChar,
                       currentMode
                     )
                   : []
               }
-              modelData={modelData}
+              modelData={activeModel}
               targetChar={currentStep < targetChars.length ? targetChars[currentStep] : ''}
             />
           </div>

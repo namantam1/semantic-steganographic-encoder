@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { createHashRouter, RouterProvider } from 'react-router-dom';
 import App from './App';
 import Visualizer from './Visualizer';
+import ModelExplorer from './ModelExplorer';
 
 const router = createHashRouter([
   {
@@ -12,6 +13,10 @@ const router = createHashRouter([
   {
     path: '/visualizer',
     element: <Visualizer />,
+  },
+  {
+    path: '/model-explorer',
+    element: <ModelExplorer />,
   },
 ]);
 
