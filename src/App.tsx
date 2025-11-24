@@ -41,9 +41,9 @@ export default function App() {
 
   const debounceTimerRef = useRef<number | null>(null);
 
-  // Load models on mount
+  // Load bigram model on mount
   useEffect(() => {
-    async function loadModels() {
+    async function loadInitialModel() {
       try {
         setIsLoading(true);
         setLoadingMessage('Loading bigram model...');
@@ -62,23 +62,7 @@ export default function App() {
         setBigramModel(loadedBigramModel);
         console.log(`Bigram model loaded. Vocab size: ${loadedBigramModel.vocab.length}`);
 
-        setLoadingMessage('Loading trigram model...');
-
-        // Load trigram model
-        const trigramResponse = await fetch('model_data_trigram.json');
-        if (!trigramResponse.ok) {
-          throw new Error(`HTTP error loading trigram model! status: ${trigramResponse.status}`);
-        }
-        const trigramData = await trigramResponse.json();
-        const loadedTrigramModel: TrigramModel = {
-          type: ModelType.TRIGRAM,
-          vocab: trigramData.vocab,
-          map: trigramData.map,
-        };
-        setTrigramModel(loadedTrigramModel);
-        console.log(`Trigram model loaded. Vocab size: ${loadedTrigramModel.vocab.length}`);
-
-        // Create the wordsByChar structure from bigram vocab (same for both models)
+        // Create the wordsByChar structure from bigram vocab
         const wordsByCharMap: WordsByChar = {};
         loadedBigramModel.vocab.forEach((word, id) => {
           const char = word[0];
@@ -95,11 +79,10 @@ export default function App() {
 
         return {
           bigramModel: loadedBigramModel,
-          trigramModel: loadedTrigramModel,
-          wordsByChar: wordsByCharMap
+          wordsByChar: wordsByCharMap,
         };
       } catch (error) {
-        console.error('Error loading models:', error);
+        console.error('Error loading bigram model:', error);
         setErrorMessage('Error: Could not load model files. Check console.');
         return null;
       } finally {
@@ -107,8 +90,8 @@ export default function App() {
       }
     }
 
-    loadModels().then((result) => {
-      // Run initial encoding if models loaded successfully
+    loadInitialModel().then((result) => {
+      // Run initial encoding if model loaded successfully
       if (result) {
         handleEncode(
           'I am good',
@@ -123,12 +106,44 @@ export default function App() {
     });
   }, []);
 
-  // Update active model when model type changes
+  // Update active model when model type changes, and load trigram model on demand
   useEffect(() => {
+    async function loadTrigramModel() {
+      if (trigramModel) return; // Already loaded
+
+      try {
+        setIsLoading(true);
+        setLoadingMessage('Loading trigram model...');
+
+        const trigramResponse = await fetch('model_data_trigram.json');
+        if (!trigramResponse.ok) {
+          throw new Error(`HTTP error loading trigram model! status: ${trigramResponse.status}`);
+        }
+        const trigramData = await trigramResponse.json();
+        const loadedTrigramModel: TrigramModel = {
+          type: ModelType.TRIGRAM,
+          vocab: trigramData.vocab,
+          map: trigramData.map,
+        };
+        setTrigramModel(loadedTrigramModel);
+        setActiveModel(loadedTrigramModel);
+        console.log(`Trigram model loaded. Vocab size: ${loadedTrigramModel.vocab.length}`);
+      } catch (error) {
+        console.error('Error loading trigram model:', error);
+        setErrorMessage('Error: Could not load trigram model. Check console.');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
     if (modelType === ModelType.BIGRAM && bigramModel) {
       setActiveModel(bigramModel);
-    } else if (modelType === ModelType.TRIGRAM && trigramModel) {
-      setActiveModel(trigramModel);
+    } else if (modelType === ModelType.TRIGRAM) {
+      if (trigramModel) {
+        setActiveModel(trigramModel);
+      } else {
+        loadTrigramModel();
+      }
     }
   }, [modelType, bigramModel, trigramModel]);
 

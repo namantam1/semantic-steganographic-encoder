@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useEffect } from 'react';
 import {
   ReactFlow,
   Node,
@@ -8,6 +8,8 @@ import {
   ConnectionLineType,
   Position,
   Handle,
+  ReactFlowProvider,
+  useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Model, ModelType } from '../../lib/types';
@@ -62,13 +64,15 @@ const nodeTypes = {
   groupedCandidates: GroupedCandidatesNode,
 };
 
-export function GraphVisualization({
+function GraphVisualizationComponent({
   show,
   currentWord,
   currentWordId,
   candidates,
   modelData,
 }: GraphVisualizationProps) {
+  const { fitView } = useReactFlow();
+
   // Get second-level candidates for each first-level candidate
   const getSecondLevelCandidates = useCallback((wordId: number): Array<[string, number]> => {
     if (!modelData || wordId === SENTENCE_BREAK_ID) return [];
@@ -325,6 +329,12 @@ export function GraphVisualization({
     return { nodes, edges };
   }, [show, currentWord, candidates, modelData, getSecondLevelCandidates, getThirdLevelCandidates]);
 
+  useEffect(() => {
+    if (nodes.length > 0) {
+      fitView({ duration: 200, padding: 0.1 });
+    }
+  }, [nodes, fitView]);
+
   if (!show) return null;
 
   const modelTypeName = modelData?.type === ModelType.TRIGRAM ? 'Tri-gram' : 'Bi-gram';
@@ -351,7 +361,6 @@ export function GraphVisualization({
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
-          fitView
           attributionPosition="bottom-right"
           minZoom={0.3}
           maxZoom={3}
@@ -364,5 +373,14 @@ export function GraphVisualization({
         </ReactFlow>
       </div>
     </div>
+  );
+}
+
+
+export function GraphVisualization(props: GraphVisualizationProps) {
+  return (
+    <ReactFlowProvider>
+      <GraphVisualizationComponent {...props} />
+    </ReactFlowProvider>
   );
 }
