@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { decodeText, decodeAndSplit, Model } from '../encoder';
+import { decodeText, decodeAndSplit } from '../../lib/decoder/decoder';
+import type { Model } from '../../lib/types';
 import { CopyButton } from './CopyButton';
 import { LoadingSpinner } from './LoadingSpinner';
 

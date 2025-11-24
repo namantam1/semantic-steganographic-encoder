@@ -1,4 +1,5 @@
-import { BEAM_WIDTH } from '../encoder';
+import { BEAM_WIDTH } from '../../lib/constants';
+import { ModelType, FallbackStrategy } from '../../lib/types';
 
 interface ControlPanelProps {
   beamWidth: number;
@@ -7,6 +8,10 @@ interface ControlPanelProps {
   onAlternativesCountChange: (value: number) => void;
   realTimeEnabled: boolean;
   onRealTimeToggle: (enabled: boolean) => void;
+  modelType: ModelType;
+  onModelTypeChange: (type: ModelType) => void;
+  fallbackStrategy: FallbackStrategy;
+  onFallbackStrategyChange: (strategy: FallbackStrategy) => void;
 }
 
 export function ControlPanel({
@@ -16,10 +21,52 @@ export function ControlPanel({
   onAlternativesCountChange,
   realTimeEnabled,
   onRealTimeToggle,
+  modelType,
+  onModelTypeChange,
+  fallbackStrategy,
+  onFallbackStrategyChange,
 }: ControlPanelProps) {
   return (
     <section className="space-y-5">
       <h2 className="text-lg font-semibold text-gray-800 border-b pb-2">Encoding Controls</h2>
+
+      {/* Model Type Selector */}
+      <div className="p-3 bg-gray-50 rounded-lg">
+        <label htmlFor="modelType" className="block text-sm font-medium text-gray-700 mb-2">
+          Model Type
+        </label>
+        <select
+          id="modelType"
+          value={modelType}
+          onChange={(e) => onModelTypeChange(e.target.value as ModelType)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm"
+        >
+          <option value={ModelType.BIGRAM}>Bigram (2-word context)</option>
+          <option value={ModelType.TRIGRAM}>Trigram (3-word context)</option>
+        </select>
+      </div>
+
+      {/* Fallback Strategy Selector */}
+      <div className="p-3 bg-gray-50 rounded-lg">
+        <label htmlFor="fallbackStrategy" className="block text-sm font-medium text-gray-700 mb-2">
+          Fallback Strategy
+        </label>
+        <select
+          id="fallbackStrategy"
+          value={fallbackStrategy}
+          onChange={(e) => onFallbackStrategyChange(e.target.value as FallbackStrategy)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm"
+        >
+          <option value={FallbackStrategy.SENTENCE_BREAK}>Sentence Break</option>
+          <option value={FallbackStrategy.BIGRAM_FALLBACK}>Bigram Fallback</option>
+          <option value={FallbackStrategy.BIGRAM_THEN_BREAK}>Bigram → Sentence Break</option>
+        </select>
+        <p className="text-xs text-gray-500 mt-2">
+          {fallbackStrategy === FallbackStrategy.SENTENCE_BREAK && 'Start new sentence when no transition exists'}
+          {fallbackStrategy === FallbackStrategy.BIGRAM_FALLBACK && 'Fall back to bigram model (trigram only)'}
+          {fallbackStrategy === FallbackStrategy.BIGRAM_THEN_BREAK && 'Try bigram, then sentence break (trigram only)'}
+        </p>
+      </div>
 
       {/* Real-time Toggle */}
       <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">

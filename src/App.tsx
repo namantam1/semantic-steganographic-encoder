@@ -1,13 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import './style.css';
-import {
-  getTargetChars,
-  encodeTextMultiple,
-  Model,
-  WordsByChar,
-  BEAM_WIDTH,
-} from './encoder';
+import { getTargetChars } from '../lib/encoder/models';
+import { encodeTextMultiple } from '../lib/encoder/beam-search';
+import type { Model, BigramModel, TrigramModel, WordsByChar } from '../lib/types';
+import { ModelType, FallbackStrategy } from '../lib/types';
+import { BEAM_WIDTH } from '../lib/constants';
 import { EncoderForm } from './components/EncoderForm';
 import { CoverTextDisplay } from './components/CoverTextDisplay';
 import { AlternativeEncodings } from './components/AlternativeEncodings';
@@ -18,8 +16,13 @@ import { GlobalLoader } from './components/GlobalLoader';
 
 // Main App Component
 export default function App() {
-  const [model, setModel] = useState<Model | null>(null);
+  // Model states
+  const [bigramModel, setBigramModel] = useState<BigramModel | null>(null);
+  const [trigramModel, setTrigramModel] = useState<TrigramModel | null>(null);
+  const [activeModel, setActiveModel] = useState<Model | null>(null);
   const [wordsByChar, setWordsByChar] = useState<WordsByChar>({});
+
+  // UI states
   const [secretText, setSecretText] = useState('I am good');
   const [coverText, setCoverText] = useState('');
   const [alternatives, setAlternatives] = useState<Array<{ text: string; score: number }>>([]);
@@ -33,59 +36,99 @@ export default function App() {
   const [alternativesCount, setAlternativesCount] = useState(3);
   const [realTimeEnabled, setRealTimeEnabled] = useState(true);
   const [activeTab, setActiveTab] = useState<'encoder' | 'decoder'>('encoder');
+  const [modelType, setModelType] = useState<ModelType>(ModelType.BIGRAM);
+  const [fallbackStrategy, setFallbackStrategy] = useState<FallbackStrategy>(FallbackStrategy.SENTENCE_BREAK);
 
   const debounceTimerRef = useRef<number | null>(null);
 
-  // Load model on mount
+  // Load models on mount
   useEffect(() => {
-    async function loadModel() {
+    async function loadModels() {
       try {
         setIsLoading(true);
-        setLoadingMessage('Loading model data...');
-        const response = await fetch('model_data.json');
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+        setLoadingMessage('Loading bigram model...');
+
+        // Load bigram model
+        const bigramResponse = await fetch('model_data.json');
+        if (!bigramResponse.ok) {
+          throw new Error(`HTTP error loading bigram model! status: ${bigramResponse.status}`);
         }
-        const data = await response.json();
-
-        // Data Processing for Efficiency
-        const loadedModel: Model = {
-          vocab: data.vocab,
-          map: data.map,
+        const bigramData = await bigramResponse.json();
+        const loadedBigramModel: BigramModel = {
+          vocab: bigramData.vocab,
+          map: bigramData.map,
         };
+        setBigramModel(loadedBigramModel);
+        console.log(`Bigram model loaded. Vocab size: ${loadedBigramModel.vocab.length}`);
 
-        // Create the fallback structure: { 'a': [id1, id2, ...], 'b': [...] }
+        setLoadingMessage('Loading trigram model...');
+
+        // Load trigram model
+        const trigramResponse = await fetch('model_data_trigram.json');
+        if (!trigramResponse.ok) {
+          throw new Error(`HTTP error loading trigram model! status: ${trigramResponse.status}`);
+        }
+        const trigramData = await trigramResponse.json();
+        const loadedTrigramModel: TrigramModel = {
+          vocab: trigramData.vocab,
+          map: trigramData.map,
+        };
+        setTrigramModel(loadedTrigramModel);
+        console.log(`Trigram model loaded. Vocab size: ${loadedTrigramModel.vocab.length}`);
+
+        // Create the wordsByChar structure from bigram vocab (same for both models)
         const wordsByCharMap: WordsByChar = {};
-        loadedModel.vocab.forEach((word, id) => {
+        loadedBigramModel.vocab.forEach((word, id) => {
           const char = word[0];
           if (!wordsByCharMap[char]) {
             wordsByCharMap[char] = [];
           }
           wordsByCharMap[char].push(id);
         });
-
-        setModel(loadedModel);
         setWordsByChar(wordsByCharMap);
-        setIsModelReady(true);
-        console.log(`Model loaded successfully. Vocab size: ${loadedModel.vocab.length}`);
 
-        return { model: loadedModel, wordsByChar: wordsByCharMap };
+        // Set initial active model to bigram
+        setActiveModel(loadedBigramModel);
+        setIsModelReady(true);
+
+        return {
+          bigramModel: loadedBigramModel,
+          trigramModel: loadedTrigramModel,
+          wordsByChar: wordsByCharMap
+        };
       } catch (error) {
-        console.error('Error loading model:', error);
-        setErrorMessage('Error: Could not load model_data.json. Check console.');
+        console.error('Error loading models:', error);
+        setErrorMessage('Error: Could not load model files. Check console.');
         return null;
       } finally {
         setIsLoading(false);
       }
     }
 
-    loadModel().then((result) => {
-      // Run initial encoding if model loaded successfully
+    loadModels().then((result) => {
+      // Run initial encoding if models loaded successfully
       if (result) {
-        handleEncode('I am good', result.model, result.wordsByChar, BEAM_WIDTH, 3);
+        handleEncode(
+          'I am good',
+          result.bigramModel,
+          result.bigramModel,
+          result.wordsByChar,
+          BEAM_WIDTH,
+          3,
+          FallbackStrategy.SENTENCE_BREAK
+        );
       }
     });
   }, []);
+
+  // Update active model when model type changes
+  useEffect(() => {
+    if (modelType === ModelType.BIGRAM && bigramModel) {
+      setActiveModel(bigramModel);
+    } else if (modelType === ModelType.TRIGRAM && trigramModel) {
+      setActiveModel(trigramModel);
+    }
+  }, [modelType, bigramModel, trigramModel]);
 
   // Real-time encoding effect
   useEffect(() => {
@@ -97,7 +140,7 @@ export default function App() {
 
       // Set new timer for debounced encoding
       debounceTimerRef.current = window.setTimeout(() => {
-        handleEncode(secretText, model, wordsByChar, beamWidth, alternativesCount);
+        handleEncode();
       }, 500); // 500ms debounce
 
       // Cleanup
@@ -107,22 +150,26 @@ export default function App() {
         }
       };
     }
-  }, [secretText, realTimeEnabled, isModelReady, beamWidth, alternativesCount]);
+  }, [secretText, realTimeEnabled, isModelReady, beamWidth, alternativesCount, modelType, fallbackStrategy]);
 
   const handleEncode = (
     secret?: string,
-    modelOverride?: Model | null,
+    activeModelOverride?: Model | null,
+    bigramModelOverride?: BigramModel | null,
     wordsByCharOverride?: WordsByChar,
     customBeamWidth?: number,
-    customAlternativesCount?: number
+    customAlternativesCount?: number,
+    customFallbackStrategy?: FallbackStrategy
   ) => {
-    const currentModel = modelOverride || model;
+    const currentActiveModel = activeModelOverride || activeModel;
+    const currentBigramModel = bigramModelOverride || bigramModel;
     const currentWordsByChar = wordsByCharOverride || wordsByChar;
     const secretToEncode = secret !== undefined ? secret : secretText;
     const currentBeamWidth = customBeamWidth !== undefined ? customBeamWidth : beamWidth;
     const currentAlternativesCount = customAlternativesCount !== undefined ? customAlternativesCount : alternativesCount;
+    const currentFallbackStrategy = customFallbackStrategy !== undefined ? customFallbackStrategy : fallbackStrategy;
 
-    if (!currentModel) {
+    if (!currentActiveModel) {
       setErrorMessage('Model not ready. Please refresh.');
       return;
     }
@@ -141,11 +188,13 @@ export default function App() {
     // Use setTimeout to allow UI to update loading state
     setTimeout(() => {
       const encodedResults = encodeTextMultiple(
-        currentModel,
+        currentActiveModel,
+        currentBigramModel,
         currentWordsByChar,
         targetChars,
         currentBeamWidth,
-        currentAlternativesCount
+        currentAlternativesCount,
+        currentFallbackStrategy
       );
 
       const bestResult = encodedResults[0];
@@ -227,6 +276,10 @@ export default function App() {
                   onAlternativesCountChange={handleAlternativesCountChange}
                   realTimeEnabled={realTimeEnabled}
                   onRealTimeToggle={setRealTimeEnabled}
+                  modelType={modelType}
+                  onModelTypeChange={setModelType}
+                  fallbackStrategy={fallbackStrategy}
+                  onFallbackStrategyChange={setFallbackStrategy}
                 />
               </div>
             </div>
@@ -251,7 +304,7 @@ export default function App() {
           </div>
         ) : (
           /* Decoder View */
-          <Decoder model={model} />
+          <Decoder model={activeModel} />
         )}
         </div>
       </div>

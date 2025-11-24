@@ -6,5 +6,6 @@
         "markdown",
         "latex",
         "plaintext"
-    ]
+    ],
+    "python.defaultInterpreterPath": "scripts/.venv/bin/python"
 }

@@ -10,6 +10,7 @@ import nltk
 from nltk.corpus import words
 
 # --- CONFIGURATION ---
+# Bigram Configuration
 # How many suggestions to keep per letter.
 # Lower = Smaller file size, Higher = Better sentence variety.
 TOP_K_PER_LETTER = 30
@@ -17,6 +18,13 @@ TOP_K_PER_LETTER = 30
 # Minimum frequency to consider a word pair valid.
 # Helps remove "junk" connections that only appeared once.
 MIN_BIGRAM_FREQ = 2
+
+# Trigram Configuration
+# How many suggestions to keep per letter for trigrams.
+TOP_K_PER_LETTER_TRIGRAM = 20
+
+# Minimum frequency to consider a word triplet valid.
+MIN_TRIGRAM_FREQ = 2
 
 # Chunk size for streaming processing (number of tokens per chunk)
 # Lower = Less memory usage, Higher = Faster processing
@@ -39,8 +47,8 @@ def load_data():
     Uses streaming download for memory efficiency with large files.
     """
     # Use parent directory since script is in scripts/ folder
-    cache_dir = Path("../.cache")
-    file_name = "data.txt"
+    cache_dir = Path(".cache")
+    file_name = "data_prod.txt"
     file_path = cache_dir / file_name
 
     if file_path.exists():
@@ -228,20 +236,169 @@ def build_model_incremental(file_path, english_words):
 
     return id_to_word, final_transitions
 
+def build_trigram_model_incremental(file_path, english_words, word_to_id, id_to_word):
+    """
+    Constructs the Trigram model incrementally from file chunks.
+    Memory-efficient approach that processes data in chunks.
+
+    Args:
+        file_path: Path to the preprocessed text file
+        english_words: Set of valid English words for filtering
+        word_to_id: Dictionary mapping words to their IDs
+        id_to_word: Dictionary mapping IDs to words
+
+    Returns:
+        Dictionary of trigram transitions
+    """
+    print("\nBuilding trigram model incrementally from chunks...")
+
+    raw_trigrams = collections.defaultdict(lambda: collections.defaultdict(collections.Counter))
+    prev_prev_token = None
+    prev_token = None
+    total_tokens = 0
+    valid_tokens_count = 0
+    chunk_count = 0
+
+    # Process file in chunks
+    for chunk in preprocess_streamed(file_path):
+        chunk_count += 1
+        total_tokens += len(chunk)
+
+        # Filter valid English words
+        valid_chunk = [t for t in chunk if t in english_words]
+        valid_tokens_count += len(valid_chunk)
+
+        # Build trigrams within chunk
+        for i in range(len(valid_chunk) - 2):
+            word1 = valid_chunk[i]
+            word2 = valid_chunk[i + 1]
+            word3 = valid_chunk[i + 2]
+            raw_trigrams[word1][word2][word3] += 1
+
+        # Handle cross-chunk trigrams
+        # Case 1: prev_prev and prev from previous chunk, current from this chunk
+        if prev_prev_token and prev_token and valid_chunk:
+            raw_trigrams[prev_prev_token][prev_token][valid_chunk[0]] += 1
+
+        # Case 2: prev from previous chunk, first two from this chunk
+        if prev_token and len(valid_chunk) >= 2:
+            raw_trigrams[prev_token][valid_chunk[0]][valid_chunk[1]] += 1
+
+        # Remember last two tokens for next chunk
+        if len(valid_chunk) >= 2:
+            prev_prev_token = valid_chunk[-2]
+            prev_token = valid_chunk[-1]
+        elif len(valid_chunk) == 1:
+            prev_prev_token = prev_token
+            prev_token = valid_chunk[0]
+
+        # Progress indicator every 10 chunks
+        if chunk_count % 10 == 0:
+            print(f"Processed {chunk_count} chunks for trigrams, {total_tokens:,} tokens...")
+
+    print(f"\nTrigram processing: {total_tokens:,} tokens processed")
+
+    # Convert to ID-based structure
+    print("Converting trigrams to ID-based structure...")
+    id_trigrams = collections.defaultdict(lambda: collections.defaultdict(collections.Counter))
+
+    for word1, word2_dict in raw_trigrams.items():
+        if word1 not in word_to_id:
+            continue
+        word1_id = word_to_id[word1]
+
+        for word2, word3_counts in word2_dict.items():
+            if word2 not in word_to_id:
+                continue
+            word2_id = word_to_id[word2]
+
+            for word3, count in word3_counts.items():
+                if word3 not in word_to_id:
+                    continue
+                word3_id = word_to_id[word3]
+                id_trigrams[word1_id][word2_id][word3_id] = count
+
+    # Clear word-based trigrams to free memory
+    raw_trigrams.clear()
+
+    # Prune and structure
+    print("Pruning and structuring trigram data...")
+
+    final_trigram_transitions = {}
+
+    for word1_id, word2_dict in id_trigrams.items():
+        word1_transitions = {}
+
+        for word2_id, word3_counts in word2_dict.items():
+            # Group next words by their starting character
+            char_groups = collections.defaultdict(list)
+
+            for word3_id, count in word3_counts.items():
+                if count < MIN_TRIGRAM_FREQ:
+                    continue  # Skip rare connections
+
+                word3_str = id_to_word[word3_id]
+                start_char = word3_str[0]
+
+                char_groups[start_char].append((word3_id, count))
+
+            # For each character group, sort by frequency and keep TOP_K
+            optimized_groups = {}
+            for char, candidates in char_groups.items():
+                # Sort by count descending
+                candidates.sort(key=itemgetter(1), reverse=True)
+                # Keep only the IDs, discard counts for the final JSON
+                top_ids = [c[0] for c in candidates[:TOP_K_PER_LETTER_TRIGRAM]]
+                optimized_groups[char] = top_ids
+
+            if optimized_groups:
+                word1_transitions[str(word2_id)] = optimized_groups
+
+        if word1_transitions:
+            final_trigram_transitions[str(word1_id)] = word1_transitions
+
+    print(f"Trigram model size: {len(final_trigram_transitions)} word1 contexts")
+
+    return final_trigram_transitions
+
 def save_to_file(vocab, transitions, filename="../public/model_data.json"):
     """
-    Saves the compressed model.
+    Saves the compressed bigram model.
     """
     data = {
         "vocab": vocab, # List where index = ID
         "map": transitions # The logic graph
     }
-    
+
     with open(filename, 'w') as f:
         json.dump(data, f, separators=(',', ':')) # Minimal separators to save space
-        
+
     print(f"Successfully saved model to {filename}")
-    
+
+    # Sanity check on file size
+    import os
+    size_kb = os.path.getsize(filename) / 1024
+    print(f"File size: {size_kb:.2f} KB")
+
+def save_trigram_to_file(vocab, trigram_transitions, filename="../public/model_data_trigram.json"):
+    """
+    Saves the compressed trigram model.
+
+    Args:
+        vocab: List of words where index = ID
+        trigram_transitions: Nested dict {word1_id: {word2_id: {char: [word3_ids]}}}
+        filename: Output file path
+    """
+    data = {
+        "vocab": vocab, # List where index = ID (shared with bigram)
+        "map": trigram_transitions # The trigram logic graph
+    }
+
+    with open(filename, 'w') as f:
+        json.dump(data, f, separators=(',', ':')) # Minimal separators to save space
+
+    print(f"\nSuccessfully saved trigram model to {filename}")
+
     # Sanity check on file size
     import os
     size_kb = os.path.getsize(filename) / 1024
@@ -258,18 +415,45 @@ if __name__ == "__main__":
     # 1. Download/load data file (streaming download)
     file_path = load_data()
 
-    # 2. Build model incrementally with chunked processing
+    # 2. Build bigram model incrementally with chunked processing
+    print("\n" + "=" * 60)
+    print("BUILDING BIGRAM MODEL")
+    print("=" * 60)
     vocab_map, transition_graph = build_model_incremental(file_path, english_words)
 
-    # 3. Save
+    # 3. Convert vocab to list format
     # Note: In a real app, 'vocab' array index matches the IDs in 'map'
     # We convert the dict {0: 'word'} to a list ['word'] for JSON array efficiency
     vocab_list = [vocab_map[i] for i in range(len(vocab_map))]
 
+    # 4. Save bigram model
     save_to_file(vocab_list, transition_graph)
 
+    # 5. Build trigram model using the same vocabulary
+    print("\n" + "=" * 60)
+    print("BUILDING TRIGRAM MODEL")
+    print("=" * 60)
+
+    # Create word_to_id mapping for trigram building
+    word_to_id = {w: i for i, w in enumerate(vocab_list)}
+
+    trigram_graph = build_trigram_model_incremental(
+        file_path,
+        english_words,
+        word_to_id,
+        vocab_map
+    )
+
+    # 6. Save trigram model
+    save_trigram_to_file(vocab_list, trigram_graph)
+
     # --- VERIFICATION (Python Side) ---
-    print("\n--- SAMPLES ---")
+    print("\n" + "=" * 60)
+    print("VERIFICATION SAMPLES")
+    print("=" * 60)
+
+    # Bigram verification
+    print("\n--- BIGRAM SAMPLE ---")
     print("Input ID for 'in':", vocab_list.index('in'))
     in_id = str(vocab_list.index('in'))
     if in_id in transition_graph:
@@ -278,3 +462,15 @@ if __name__ == "__main__":
         if 't' in transition_graph[in_id]:
             following_ids = transition_graph[in_id]['t']
             print(f" -> starting with 't': {[vocab_list[id] for id in following_ids]}")
+
+    # Trigram verification
+    print("\n--- TRIGRAM SAMPLE ---")
+    if in_id in trigram_graph:
+        print(f"Trigram contexts starting with 'in' ({in_id}): {list(trigram_graph[in_id].keys())[:5]}...")
+        # Get first available second word
+        if trigram_graph[in_id]:
+            second_word_id = list(trigram_graph[in_id].keys())[0]
+            second_word = vocab_list[int(second_word_id)]
+            print(f"Example: 'in' -> '{second_word}' transitions: {trigram_graph[in_id][second_word_id]}")
+    else:
+        print(f"No trigram contexts found starting with 'in'")

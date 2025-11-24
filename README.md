@@ -236,9 +236,5 @@ Test coverage includes:
 
 ## Ideas to Improve
 
-- [ ] Add UI controls for beam width and sentence break penalty
 - [ ] Add option to use custom text corpus
-- [ ] Add option to visualize the bigram graph
 - [ ] Try tri-gram and multi-gram support
-- [ ] Better decoding with reverse dictionary
-- [ ] Support for multiple punctuation marks (!, ?) beyond periods 

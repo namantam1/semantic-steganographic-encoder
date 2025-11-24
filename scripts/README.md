@@ -1,6 +1,6 @@
 # Python Scripts
 
-This directory contains Python utility scripts for building and managing the bigram model.
+This directory contains Python utility scripts for building and managing the bigram and trigram models.
 
 ## Requirements
 
@@ -17,7 +17,7 @@ uv sync
 
 ### `data_builder.py`
 
-Builds the bigram model from the WikiText-2 corpus.
+Builds both bigram and trigram models from the WikiText-2 corpus.
 
 **Usage:**
 ```bash
@@ -26,13 +26,19 @@ python data_builder.py
 ```
 
 **Configuration:**
-- `TOP_K_PER_LETTER`: Number of bigram suggestions per starting letter (default: 30)
-- `MIN_BIGRAM_FREQ`: Minimum frequency threshold for valid word pairs (default: 2)
+
+Bigram settings:
+- `TOP_K_PER_LETTER`: Suggestions per starting letter (default: 30)
+- `MIN_BIGRAM_FREQ`: Minimum frequency threshold (default: 2)
+
+Trigram settings:
+- `TOP_K_PER_LETTER_TRIGRAM`: Suggestions per starting letter (default: 20)
+- `MIN_TRIGRAM_FREQ`: Minimum frequency threshold (default: 2)
 
 **Output:**
-- Generates `model_data.json` in the `../public/` directory
+- Generates `model_data.json` in `../public/` (~1.4 MB)
+- Generates `model_data_trigram.json` in `../public/`
 - Downloads and caches WikiText-2 corpus in `../.cache/`
-- Model file size: ~1.4 MB
 
 **Dependencies:**
 - `datasets`: For downloading WikiText-2 corpus
@@ -42,8 +48,7 @@ python data_builder.py
 
 ## Model Data Format
 
-The generated `model_data.json` contains:
-
+**Bigram** (`model_data.json`):
 ```json
 {
   "vocab": ["the", "in", "afternoon", ...],
@@ -55,6 +60,22 @@ The generated `model_data.json` contains:
   }
 }
 ```
-
 - **vocab**: Array where index = Word ID
-- **map**: Transition graph (current word ID → next character → list of next word IDs)
+- **map**: Bigram transitions (word1_id → next_char → [word2_ids])
+
+**Trigram** (`model_data_trigram.json`):
+```json
+{
+  "vocab": ["the", "in", "afternoon", ...],
+  "map": {
+    "1": {
+      "2": {
+        "a": [5, 10],
+        "t": [0, 7]
+      }
+    }
+  }
+}
+```
+- **vocab**: Same vocabulary as bigram model
+- **map**: Trigram transitions (word1_id → word2_id → next_char → [word3_ids])

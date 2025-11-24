@@ -1,4 +1,5 @@
-import { getTargetChars, getCandidates, Model, WordsByChar } from './encoder';
+import { getTargetChars, getCandidates } from '../lib/encoder/models';
+import type { Model, WordsByChar } from '../lib/types';
 
 // Re-export types for component use
 export type { Model, WordsByChar };
@@ -105,10 +106,10 @@ export function performBeamStep(
   let newBeam: BeamPath[] = [];
 
   for (const path of beam) {
-    const lastWordId = path.sequence[path.sequence.length - 1];
     const currentScore = path.score;
+    const context = path.sequence.slice(-1); // Get last word as context
 
-    const candidates = getCandidates(modelData, wordsByChar, lastWordId, targetChar);
+    const candidates = getCandidates(modelData, null, wordsByChar, context, targetChar);
 
     for (const [nextWordId, transScore] of candidates) {
       if (nextWordId === SENTENCE_BREAK_ID) {
@@ -117,7 +118,7 @@ export function performBeamStep(
           score: currentScore + transScore
         };
 
-        const restartCandidates = getCandidates(modelData, wordsByChar, SENTENCE_BREAK_ID, targetChar);
+        const restartCandidates = getCandidates(modelData, null, wordsByChar, [SENTENCE_BREAK_ID], targetChar);
 
         for (const [restartWordId, restartScore] of restartCandidates) {
           newBeam.push({
@@ -176,11 +177,11 @@ export function getStepCandidates(
     });
   }
 
-  const lastWordId = path.sequence.length > 0
-    ? path.sequence[path.sequence.length - 1]
-    : SENTENCE_BREAK_ID;
+  const context = path.sequence.length > 0
+    ? path.sequence.slice(-1)
+    : [SENTENCE_BREAK_ID];
 
-  return getCandidates(modelData, wordsByChar, lastWordId, targetChar);
+  return getCandidates(modelData, null, wordsByChar, context, targetChar);
 }
 
 /**

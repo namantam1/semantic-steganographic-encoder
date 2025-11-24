@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import './style.css';
 import './visualizer.css';
-import { Model, WordsByChar } from './encoder';
+import type { Model, WordsByChar } from '../lib/types';
 import {
   initializeBeam,
   initializeUserPath,
