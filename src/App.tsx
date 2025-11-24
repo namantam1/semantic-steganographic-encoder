@@ -55,6 +55,7 @@ export default function App() {
         }
         const bigramData = await bigramResponse.json();
         const loadedBigramModel: BigramModel = {
+          type: ModelType.BIGRAM,
           vocab: bigramData.vocab,
           map: bigramData.map,
         };
@@ -70,6 +71,7 @@ export default function App() {
         }
         const trigramData = await trigramResponse.json();
         const loadedTrigramModel: TrigramModel = {
+          type: ModelType.TRIGRAM,
           vocab: trigramData.vocab,
           map: trigramData.map,
         };
@@ -150,7 +152,7 @@ export default function App() {
         }
       };
     }
-  }, [secretText, realTimeEnabled, isModelReady, beamWidth, alternativesCount, modelType, fallbackStrategy]);
+  }, [secretText, realTimeEnabled, isModelReady, beamWidth, alternativesCount, activeModel, fallbackStrategy]);
 
   const handleEncode = (
     secret?: string,

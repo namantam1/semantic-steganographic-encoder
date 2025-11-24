@@ -1,5 +1,11 @@
 // Type definitions
+export enum ModelType {
+  BIGRAM = 'bigram',
+  TRIGRAM = 'trigram',
+}
+
 export interface BigramModel {
+  type: ModelType.BIGRAM;
   vocab: string[];
   map: {
     [wordId: string]: {
@@ -9,6 +15,7 @@ export interface BigramModel {
 }
 
 export interface TrigramModel {
+  type: ModelType.TRIGRAM;
   vocab: string[];
   map: {
     [word1Id: string]: {
@@ -28,11 +35,6 @@ export interface WordsByChar {
 export interface BeamPath {
   sequence: number[];
   score: number;
-}
-
-export enum ModelType {
-  BIGRAM = 'bigram',
-  TRIGRAM = 'trigram',
 }
 
 export enum FallbackStrategy {

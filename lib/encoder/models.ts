@@ -2,38 +2,10 @@ import { BEAM_WIDTH, SENTENCE_BREAK_ID } from '../constants';
 import type {
   Model,
   BigramModel,
-  TrigramModel,
   WordsByChar,
   FallbackStrategy,
 } from '../types';
-import { FallbackStrategy as FallbackStrategyEnum } from '../types';
-
-// Type guard functions
-export function isBigramModel(model: Model): model is BigramModel {
-  if (!model || !model.map) return false;
-  const firstKey = Object.keys(model.map)[0];
-  if (!firstKey) return false;
-  const firstValue = (model.map as any)[firstKey];
-  if (!firstValue || typeof firstValue !== 'object') return false;
-  const firstChar = Object.keys(firstValue)[0];
-  if (!firstChar) return false;
-  return Array.isArray(firstValue[firstChar]);
-}
-
-export function isTrigramModel(model: Model): model is TrigramModel {
-  if (!model || !model.map) return false;
-  const firstKey = Object.keys(model.map)[0];
-  if (!firstKey) return false;
-  const firstValue = (model.map as any)[firstKey];
-  if (!firstValue || typeof firstValue !== 'object') return false;
-  const secondKey = Object.keys(firstValue)[0];
-  if (!secondKey) return false;
-  const secondValue = firstValue[secondKey];
-  if (!secondValue || typeof secondValue !== 'object') return false;
-  const firstChar = Object.keys(secondValue)[0];
-  if (!firstChar) return false;
-  return Array.isArray(secondValue[firstChar]);
-}
+import { FallbackStrategy as FallbackStrategyEnum, ModelType } from '../types';
 
 /**
  * Cleans the secret text to get the sequence of target characters.
@@ -106,7 +78,7 @@ export function getCandidates(
   const validContext = context.filter(id => id !== SENTENCE_BREAK_ID);
 
   // Try primary model (bigram or trigram)
-  if (isTrigramModel(model)) {
+  if (model.type === ModelType.TRIGRAM) {
     // Trigram lookup: need at least 2 words
     if (validContext.length >= 2) {
       const word1Id = validContext[validContext.length - 2];

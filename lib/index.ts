@@ -17,8 +17,6 @@ export { ModelType, FallbackStrategy } from './types';
 export {
   getTargetChars,
   getCandidates,
-  isBigramModel,
-  isTrigramModel,
   encodeText,
   encodeTextMultiple,
   pathToSentence,
